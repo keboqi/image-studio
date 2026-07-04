@@ -4,7 +4,10 @@ set -euo pipefail
 sudo apt update
 sudo apt install -y curl ffmpeg
 python -m pip install uv Librosa gradio "diffusers==0.36.0"
-python -m pip install flash-attn sageattention --no-build-isolation
+# flash-attn downloads a matching wheel during its build step.  Keep pip's
+# wheel cache disabled so that wheel is not renamed across mounted filesystems.
+python -m pip install flash-attn --no-build-isolation --no-cache-dir
+python -m pip install sageattention --no-build-isolation
 python -m pip install "https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu12.8torch2.8-cp312-cp312-linux_x86_64.whl"
 
 git clone https://github.com/keboqi/ideogram4.git ideogram4
