@@ -1,0 +1,5 @@
+# The main WebUI currently depends on the NumPy 1.x binary ABI. OpenCV 4.12+
+# requires NumPy 2 on Python 3.12, so keep both OpenCV distributions below it.
+numpy<2.0
+opencv-python<4.12
+opencv-python-headless<4.12
