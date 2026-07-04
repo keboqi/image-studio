@@ -1,0 +1,1788 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Ideogram 4 Caption Studio</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        :root {
+            --bg: #0e1117;
+            --panel: #161b25;
+            --panel2: #1c2230;
+            --line: #2a3245;
+            --txt: #dde3ee;
+            --dim: #8b96ab;
+            --accent: #4f8cff;
+            --accent2: #00cc88;
+            --warn: #e8b339;
+            --err: #e35d6a;
+            --obj: #4f8cff;
+            --text-el: #e85da8;
+            --mono: 'SF Mono', Consolas, 'Cascadia Code', Menlo, monospace;
+            --sans: -apple-system, 'Segoe UI', Roboto, Inter, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        html,
+        body {
+            height: 100%
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--txt);
+            font-family: var(--sans);
+            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden
+        }
+
+        /* ---------- header ---------- */
+        header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            background: var(--panel);
+            border-bottom: 1px solid var(--line);
+            flex-wrap: wrap
+        }
+
+        header h1 {
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: .3px;
+            margin-right: 6px
+        }
+
+        header h1 span {
+            color: var(--accent)
+        }
+
+        .hgroup {
+            display: flex;
+            align-items: center;
+            gap: 6px
+        }
+
+        label.inline {
+            color: var(--dim);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .5px
+        }
+
+        select,
+        input[type=text],
+        input[type=number],
+        textarea {
+            background: var(--panel2);
+            color: var(--txt);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 5px 8px;
+            font-family: var(--sans);
+            font-size: 12.5px;
+            outline: none
+        }
+
+        select:focus,
+        input:focus,
+        textarea:focus {
+            border-color: var(--accent)
+        }
+
+        textarea {
+            resize: vertical;
+            line-height: 1.45
+        }
+
+        button {
+            background: var(--panel2);
+            color: var(--txt);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 5px 11px;
+            cursor: pointer;
+            font-size: 12.5px;
+            font-family: var(--sans);
+            transition: .12s
+        }
+
+        button:hover {
+            border-color: var(--accent);
+            color: #fff
+        }
+
+        button.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+            font-weight: 600
+        }
+
+        button.primary:hover {
+            filter: brightness(1.12)
+        }
+
+        button.good {
+            background: var(--accent2);
+            border-color: var(--accent2);
+            color: #06281c;
+            font-weight: 600
+        }
+
+        button.danger:hover {
+            border-color: var(--err);
+            color: var(--err)
+        }
+
+        button.small {
+            padding: 2px 7px;
+            font-size: 11px
+        }
+
+        .spacer {
+            flex: 1
+        }
+
+        /* ---------- layout ---------- */
+        #main {
+            flex: 1;
+            display: flex;
+            min-height: 0
+        }
+
+        #left {
+            width: 46%;
+            min-width: 380px;
+            max-width: 60%;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--line);
+            background: var(--panel)
+        }
+
+        #dragbar {
+            width: 5px;
+            cursor: col-resize;
+            background: transparent
+        }
+
+        #dragbar:hover {
+            background: var(--accent)
+        }
+
+        #right {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            background: var(--bg)
+        }
+
+        /* ---------- tabs ---------- */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--line);
+            background: var(--panel)
+        }
+
+        .tab {
+            padding: 9px 16px;
+            cursor: pointer;
+            color: var(--dim);
+            font-weight: 600;
+            font-size: 12.5px;
+            border-bottom: 2px solid transparent;
+            user-select: none
+        }
+
+        .tab.active {
+            color: var(--txt);
+            border-bottom-color: var(--accent)
+        }
+
+        .tabpane {
+            flex: 1;
+            overflow: auto;
+            display: none;
+            min-height: 0
+        }
+
+        .tabpane.active {
+            display: flex;
+            flex-direction: column
+        }
+
+        /* ---------- designer form ---------- */
+        #designer {
+            padding: 12px;
+            gap: 12px;
+            overflow-y: auto
+        }
+
+        .section {
+            background: var(--panel2);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            margin-bottom: 12px
+        }
+
+        .sectionhead {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--line);
+            cursor: pointer;
+            user-select: none
+        }
+
+        .sectionhead h2 {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            color: var(--accent);
+            font-weight: 700
+        }
+
+        .sectionhead .caret {
+            color: var(--dim);
+            transition: .15s
+        }
+
+        .section.collapsed .caret {
+            transform: rotate(-90deg)
+        }
+
+        .section.collapsed .sectionbody {
+            display: none
+        }
+
+        .sectionbody {
+            padding: 12px
+        }
+
+        .field {
+            margin-bottom: 10px
+        }
+
+        .field:last-child {
+            margin-bottom: 0
+        }
+
+        .field>label {
+            display: block;
+            font-size: 11px;
+            color: var(--dim);
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            margin-bottom: 4px
+        }
+
+        .field textarea,
+        .field input[type=text] {
+            width: 100%
+        }
+
+        .hint {
+            font-size: 11px;
+            color: var(--dim);
+            margin-top: 3px;
+            line-height: 1.4
+        }
+
+        .row {
+            display: flex;
+            gap: 8px
+        }
+
+        .row>.field {
+            flex: 1
+        }
+
+        .wordcount {
+            float: right;
+            font-size: 10px;
+            color: var(--dim)
+        }
+
+        .wordcount.over {
+            color: var(--err);
+            font-weight: 700
+        }
+
+        .toggle {
+            display: inline-flex;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            overflow: hidden
+        }
+
+        .toggle button {
+            border: none;
+            border-radius: 0;
+            padding: 4px 12px
+        }
+
+        .toggle button.on {
+            background: var(--accent);
+            color: #fff
+        }
+
+        .switchrow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px
+        }
+
+        /* palette */
+        .palette {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center
+        }
+
+        .swatch {
+            position: relative;
+            width: 34px;
+            height: 34px;
+            border-radius: 7px;
+            border: 1px solid var(--line);
+            cursor: pointer;
+            overflow: hidden
+        }
+
+        .swatch input[type=color] {
+            position: absolute;
+            inset: -6px;
+            width: 48px;
+            height: 48px;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            background: none
+        }
+
+        .swatch .x {
+            position: absolute;
+            top: -1px;
+            right: 1px;
+            font-size: 11px;
+            color: #fff;
+            text-shadow: 0 0 3px #000;
+            display: none;
+            cursor: pointer;
+            line-height: 1
+        }
+
+        .swatch:hover .x {
+            display: block
+        }
+
+        .addswatch {
+            width: 34px;
+            height: 34px;
+            border-radius: 7px;
+            border: 1px dashed var(--dim);
+            background: none;
+            color: var(--dim);
+            font-size: 17px;
+            padding: 0
+        }
+
+        .hexlabel {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--dim);
+            margin-top: 2px;
+            text-align: center
+        }
+
+        .swatchwrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center
+        }
+
+        /* elements */
+        .elcard {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--obj);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            overflow: hidden
+        }
+
+        .elcard.texttype {
+            border-left-color: var(--text-el)
+        }
+
+        .elcard.selected {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent)
+        }
+
+        .elhead {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 10px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, .02)
+        }
+
+        .elhead .badge {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 4px;
+            background: var(--obj);
+            color: #fff;
+            letter-spacing: .5px
+        }
+
+        .elcard.texttype .elhead .badge {
+            background: var(--text-el)
+        }
+
+        .elhead .summary {
+            flex: 1;
+            color: var(--dim);
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis
+        }
+
+        .elbody {
+            padding: 10px;
+            border-top: 1px solid var(--line)
+        }
+
+        .elcard.collapsed .elbody {
+            display: none
+        }
+
+        .bboxgrid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px
+        }
+
+        .bboxgrid input {
+            width: 100%;
+            font-family: var(--mono)
+        }
+
+        .bboxgrid .lbl {
+            font-size: 10px;
+            color: var(--dim);
+            text-align: center;
+            margin-bottom: 2px
+        }
+
+        .elactions {
+            display: flex;
+            gap: 5px
+        }
+
+        /* ---------- JSON pane ---------- */
+        #jsonpane {
+            padding: 0
+        }
+
+        #jsonbar {
+            display: flex;
+            gap: 8px;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--line);
+            align-items: center
+        }
+
+        #jsonstatus {
+            font-size: 11.5px;
+            color: var(--dim)
+        }
+
+        #jsonstatus.err {
+            color: var(--err)
+        }
+
+        #jsonstatus.ok {
+            color: var(--accent2)
+        }
+
+        #jsontext {
+            flex: 1;
+            width: 100%;
+            border: none;
+            border-radius: 0;
+            background: #0b0e14;
+            font-family: var(--mono);
+            font-size: 12px;
+            padding: 12px;
+            line-height: 1.55;
+            tab-size: 2
+        }
+
+        /* ---------- canvas ---------- */
+        #canvaswrap {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 18px;
+            min-height: 0;
+            position: relative;
+            overflow: hidden
+        }
+
+        #canvasbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px 14px;
+            border-bottom: 1px solid var(--line);
+            background: var(--panel);
+            flex-wrap: wrap
+        }
+
+        #canvasbar .legend {
+            display: flex;
+            gap: 12px;
+            font-size: 11px;
+            color: var(--dim);
+            align-items: center
+        }
+
+        .dot {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            border-radius: 2px;
+            margin-right: 4px;
+            vertical-align: -1px
+        }
+
+        #frame {
+            position: relative;
+            background:
+                repeating-conic-gradient(#1a2030 0 25%, #141925 0 50%) 0 0/22px 22px;
+            border: 1px solid var(--line);
+            box-shadow: 0 6px 30px rgba(0, 0, 0, .5);
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: crosshair
+        }
+
+        #frame .bgfill {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: flex-end;
+            padding: 8px;
+            pointer-events: none
+        }
+
+        #frame .bgfill .bgtext {
+            font-size: 10px;
+            color: rgba(255, 255, 255, .35);
+            max-height: 38%;
+            overflow: hidden;
+            line-height: 1.35;
+            font-style: italic
+        }
+
+        .bbox {
+            position: absolute;
+            border: 1.5px solid var(--obj);
+            background: rgba(79, 140, 255, .12);
+            cursor: move;
+            border-radius: 2px
+        }
+
+        .bbox.texttype {
+            border-color: var(--text-el);
+            background: rgba(232, 93, 168, .12)
+        }
+
+        .bbox.selected {
+            border-width: 2px;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, .35), 0 0 14px rgba(79, 140, 255, .35);
+            z-index: 50
+        }
+
+        .bbox .tag {
+            position: absolute;
+            top: -1px;
+            left: -1px;
+            font-size: 10px;
+            font-weight: 700;
+            background: var(--obj);
+            color: #fff;
+            padding: 1px 6px;
+            border-radius: 0 0 4px 0;
+            white-space: nowrap;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            pointer-events: none
+        }
+
+        .bbox.texttype .tag {
+            background: var(--text-el)
+        }
+
+        .bbox .inner {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            pointer-events: none;
+            padding: 3px
+        }
+
+        .bbox .inner .txtprev {
+            color: #fff;
+            text-shadow: 0 1px 4px rgba(0, 0, 0, .8);
+            font-weight: 700;
+            text-align: center;
+            line-height: 1.15;
+            word-break: break-word
+        }
+
+        .handle {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #fff;
+            border: 1.5px solid var(--accent);
+            border-radius: 50%;
+            z-index: 60;
+            display: none
+        }
+
+        .bbox.selected .handle {
+            display: block
+        }
+
+        .h-nw {
+            top: -6px;
+            left: -6px;
+            cursor: nwse-resize
+        }
+
+        .h-ne {
+            top: -6px;
+            right: -6px;
+            cursor: nesw-resize
+        }
+
+        .h-sw {
+            bottom: -6px;
+            left: -6px;
+            cursor: nesw-resize
+        }
+
+        .h-se {
+            bottom: -6px;
+            right: -6px;
+            cursor: nwse-resize
+        }
+
+        #coordreadout {
+            position: absolute;
+            bottom: 6px;
+            right: 10px;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--dim);
+            pointer-events: none
+        }
+
+        .nobboxchips {
+            padding: 6px 14px;
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            border-top: 1px solid var(--line);
+            background: var(--panel)
+        }
+
+        .nobboxchips .chip {
+            font-size: 11px;
+            border: 1px dashed var(--dim);
+            color: var(--dim);
+            border-radius: 20px;
+            padding: 2px 10px;
+            cursor: pointer
+        }
+
+        .nobboxchips .chip:hover {
+            color: var(--txt);
+            border-color: var(--accent)
+        }
+
+        /* ---------- validation ---------- */
+        #validation {
+            max-height: 30%;
+            min-height: 34px;
+            border-top: 1px solid var(--line);
+            background: var(--panel);
+            display: flex;
+            flex-direction: column
+        }
+
+        #valhead {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 14px;
+            cursor: pointer;
+            user-select: none
+        }
+
+        #valhead h3 {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            color: var(--dim)
+        }
+
+        .valcount {
+            font-size: 10px;
+            font-weight: 700;
+            border-radius: 10px;
+            padding: 1px 8px
+        }
+
+        .valcount.ok {
+            background: rgba(0, 204, 136, .15);
+            color: var(--accent2)
+        }
+
+        .valcount.warn {
+            background: rgba(232, 179, 57, .15);
+            color: var(--warn)
+        }
+
+        .valcount.err {
+            background: rgba(227, 93, 106, .15);
+            color: var(--err)
+        }
+
+        #vallist {
+            overflow-y: auto;
+            padding: 0 14px 10px;
+            display: none
+        }
+
+        #validation.open #vallist {
+            display: block
+        }
+
+        .valitem {
+            font-size: 12px;
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, .04);
+            line-height: 1.4
+        }
+
+        .valitem b {
+            font-family: var(--mono);
+            font-weight: 600
+        }
+
+        .valitem.warn {
+            color: var(--warn)
+        }
+
+        .valitem.err {
+            color: var(--err)
+        }
+
+        .valitem.info {
+            color: var(--dim)
+        }
+
+        /* toast */
+        #toast {
+            position: fixed;
+            bottom: 22px;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: var(--accent2);
+            color: #06281c;
+            font-weight: 700;
+            padding: 9px 18px;
+            border-radius: 8px;
+            transition: .25s;
+            z-index: 999;
+            opacity: 0
+        }
+
+        #toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1
+        }
+
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2a3245;
+            border-radius: 5px
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>Ideogram&nbsp;4 <span>Caption Studio</span></h1>
+        <div class="hgroup">
+            <label class="inline">Aspect</label>
+            <select id="aspectSel">
+                <option>1:1</option>
+                <option>16:9</option>
+                <option>9:16</option>
+                <option>4:5</option>
+                <option>5:4</option>
+                <option>3:4</option>
+                <option>4:3</option>
+                <option>2:3</option>
+                <option>3:2</option>
+                <option>3:1</option>
+                <option>21:9</option>
+                <option value="custom">custom…</option>
+            </select>
+            <input type="text" id="aspectCustom" placeholder="W:H" style="width:58px;display:none">
+        </div>
+        <div class="hgroup">
+            <label class="inline">Example</label>
+            <select id="exampleSel">
+                <option value="">— load —</option>
+                <option value="sailboat">Sunset sailboat (photo)</option>
+                <option value="bizcard">Business card (graphic_design)</option>
+                <option value="f1">Max Verstappen F1 (full)</option>
+                <option value="blank">Blank caption</option>
+            </select>
+        </div>
+        <div class="spacer"></div>
+        <button id="importBtn">Import</button>
+        <input type="file" id="fileInput" accept=".json,.txt" style="display:none">
+        <button id="downloadBtn">Download .json</button>
+        <button id="copyPretty">Copy pretty</button>
+        <button id="copyMin" class="good">Copy minified</button>
+        <button id="applyWebUI" class="primary">Apply to WebUI</button>
+    </header>
+
+    <div id="main">
+        <!-- LEFT: editors -->
+        <div id="left">
+            <div class="tabs">
+                <div class="tab active" data-tab="designer">Designer</div>
+                <div class="tab" data-tab="json">JSON</div>
+            </div>
+
+            <!-- Designer pane -->
+            <div class="tabpane active" id="designer">
+
+                <div class="section" id="sec-hld">
+                    <div class="sectionhead"><span class="caret">▾</span>
+                        <h2>high_level_description</h2>
+                    </div>
+                    <div class="sectionbody">
+                        <div class="field">
+                            <label>Summary <span class="wordcount" id="hldCount">0 words</span></label>
+                            <textarea id="hld" rows="3"
+                                placeholder="One long sentence; subject + medium + composition. Starts with the subject — no 'this image shows'."></textarea>
+                            <div class="hint">≤ 50 words. Name pop-culture entities fully. For transparency include the
+                                literal phrase <i>on a transparent background</i>.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section" id="sec-style">
+                    <div class="sectionhead"><span class="caret">▾</span>
+                        <h2>style_description</h2>
+                        <div class="spacer"></div>
+                        <label class="switchrow" style="margin:0" onclick="event.stopPropagation()">
+                            <input type="checkbox" id="styleEnabled" checked> <span
+                                style="font-size:11px;color:var(--dim)">include</span>
+                        </label>
+                    </div>
+                    <div class="sectionbody" id="styleBody">
+                        <div class="switchrow">
+                            <label class="inline">Caption type</label>
+                            <div class="toggle">
+                                <button id="modePhoto" class="on">photo</button>
+                                <button id="modeArt">art_style</button>
+                            </div>
+                            <span class="hint" style="margin:0">exactly one of <b>photo</b> / <b>art_style</b></span>
+                        </div>
+                        <div class="field"><label>aesthetics</label><input type="text" id="st_aesthetics"
+                                placeholder="moody, cinematic, desaturated"></div>
+                        <div class="field"><label>lighting</label><input type="text" id="st_lighting"
+                                placeholder="overcast daylight, diffused, soft subtle shadows"></div>
+                        <div class="field" id="photoField"><label>photo</label><input type="text" id="st_photo"
+                                placeholder="shallow depth of field, eye-level, telephoto"></div>
+                        <div class="field"><label>medium</label>
+                            <select id="st_medium">
+                                <option>photograph</option>
+                                <option>illustration</option>
+                                <option>3d_render</option>
+                                <option>painting</option>
+                                <option>graphic_design</option>
+                            </select>
+                        </div>
+                        <div class="field" id="artField" style="display:none"><label>art_style</label><input type="text"
+                                id="st_art" placeholder="flat vector illustration, bold outlines"></div>
+                        <div class="field"><label>color_palette <span class="hint" style="display:inline">(≤16,
+                                    uppercase #RRGGBB)</span></label>
+                            <div class="palette" id="stylePalette"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section" id="sec-bg">
+                    <div class="sectionhead"><span class="caret">▾</span>
+                        <h2>background</h2>
+                    </div>
+                    <div class="sectionbody">
+                        <div class="field">
+                            <textarea id="bg" rows="4"
+                                placeholder="The scene SHELL: walls, floor/ground state, ceiling, sky, atmosphere, ambient lighting, distant blurred context…"></textarea>
+                            <div class="hint">No furniture / people / vehicles here. Ground & sky always live here. If
+                                you can't picture the <i>empty</i> room from it, something leaked.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section" id="sec-els">
+                    <div class="sectionhead"><span class="caret">▾</span>
+                        <h2>elements</h2>
+                        <div class="spacer"></div>
+                        <button class="small" id="addObj" onclick="event.stopPropagation()">+ obj</button>
+                        <button class="small" id="addText" onclick="event.stopPropagation()">+ text</button>
+                    </div>
+                    <div class="sectionbody" id="elList"></div>
+                </div>
+
+            </div>
+
+            <!-- JSON pane -->
+            <div class="tabpane" id="jsonpane">
+                <div id="jsonbar">
+                    <button class="primary" id="applyJson">Apply to designer</button>
+                    <button id="formatJson">Format</button>
+                    <button id="minifyJson">Minify</button>
+                    <span id="jsonstatus"></span>
+                </div>
+                <textarea id="jsontext" spellcheck="false"></textarea>
+            </div>
+        </div>
+
+        <div id="dragbar"></div>
+
+        <!-- RIGHT: canvas + validation -->
+        <div id="right">
+            <div id="canvasbar">
+                <div class="legend">
+                    <span><span class="dot" style="background:var(--obj)"></span>obj</span>
+                    <span><span class="dot" style="background:var(--text-el)"></span>text</span>
+                    <span style="opacity:.7">drag empty space = draw bbox for selected · drag box = move · corners =
+                        resize · ⌫ = remove bbox</span>
+                </div>
+                <div class="spacer"></div>
+                <label class="switchrow" style="margin:0;font-size:11px;color:var(--dim)">
+                    <input type="checkbox" id="showLabels" checked> labels
+                </label>
+            </div>
+            <div id="canvaswrap">
+                <div id="frame">
+                    <div class="bgfill">
+                        <div class="bgtext" id="bgPreview"></div>
+                    </div>
+                </div>
+                <div id="coordreadout"></div>
+            </div>
+            <div class="nobboxchips" id="nobboxChips"></div>
+            <div id="validation" class="open">
+                <div id="valhead">
+                    <h3>Caption Verifier</h3>
+                    <span class="valcount ok" id="valBadge">OK</span>
+                    <div class="spacer"></div><span style="color:var(--dim);font-size:11px">click to toggle</span>
+                </div>
+                <div id="vallist"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast">Copied!</div>
+
+    <script>
+        /* =================================================================
+           STATE
+        ================================================================= */
+        const HEX_RE = /^#[0-9A-F]{6}$/;
+        let state = {
+            aspect: "1:1",
+            caption: {
+                high_level_description: "",
+                style_description: { aesthetics: "", lighting: "", photo: "", medium: "photograph", color_palette: [] },
+                compositional_deconstruction: { background: "", elements: [] }
+            },
+            styleEnabled: true,
+            styleMode: "photo",        // "photo" | "art"
+            selected: -1               // selected element index
+        };
+
+        const $ = id => document.getElementById(id);
+        const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+        /* =================================================================
+           EXAMPLES (from the prompting guide)
+        ================================================================= */
+        const EXAMPLES = {
+            blank: {
+                aspect: "1:1", caption: {
+                    high_level_description: "",
+                    style_description: { aesthetics: "", lighting: "", photo: "", medium: "photograph", color_palette: [] },
+                    compositional_deconstruction: { background: "", elements: [] }
+                }
+            },
+            sailboat: {
+                aspect: "16:9", caption: {
+                    high_level_description: "A lone sailboat on calm water at sunset.",
+                    style_description: { aesthetics: "serene, warm, golden hour", lighting: "golden hour backlighting, warm atmospheric haze", photo: "wide angle, f/8, long exposure", medium: "photograph", color_palette: ["#FF6B35", "#F7C59F", "#004E89", "#1A659E", "#2B2D42"] },
+                    compositional_deconstruction: {
+                        background: "A calm ocean stretching to a low horizon, sky washed in orange and pink with thin wisps of cloud.",
+                        elements: [{ type: "obj", bbox: [380, 420, 720, 580], desc: "A single sailboat with a white triangular sail, silhouetted against the setting sun." }]
+                    }
+                }
+            },
+            bizcard: {
+                aspect: "3:2", caption: {
+                    high_level_description: "A clean, modern business card layout for a tech company.",
+                    style_description: { aesthetics: "minimal, professional, geometric", lighting: "even, diffuse studio lighting", medium: "graphic_design", art_style: "flat vector design, generous whitespace, sans-serif typography", color_palette: ["#FFFFFF", "#F0F0F0", "#333333", "#0066FF", "#00CC88"] },
+                    compositional_deconstruction: {
+                        background: "A solid off-white card surface with subtle paper texture.",
+                        elements: [
+                            { type: "text", bbox: [120, 80, 300, 700], text: "ACME TECH", desc: "Bold dark grey sans-serif company name across the upper third of the card." },
+                            { type: "text", bbox: [800, 80, 900, 500], text: "hello@acme.tech", desc: "Small blue sans-serif contact email near the bottom of the card." }]
+                    }
+                }
+            },
+            f1: {
+                aspect: "2:3", caption: {
+                    high_level_description: "A medium-shot photograph of Formula 1 driver Max Verstappen wearing his Red Bull Racing racing suit and cap, smiling as he holds his racing helmet and talks to a man in a white shirt and black vest at a race track.",
+                    style_description: { aesthetics: "saturated primary colors, rule of thirds, joyful and triumphant", lighting: "overcast daylight, diffused, soft subtle shadows", photo: "shallow depth of field, sharp focus, eye-level, telephoto", medium: "photograph" },
+                    compositional_deconstruction: {
+                        background: "The background is an out-of-focus racing paddock or track environment. Several blurred figures are visible, including one in an orange shirt. A purple and white structure with a red 'F1' logo stands on the left. The scene is outdoors with daylight, though the sky is not visible.",
+                        elements: [
+                            { type: "obj", bbox: [55, 642, 1000, 937], desc: "An older man standing in profile, facing left toward Max Verstappen. He has grey hair and fair skin. He is wearing a white long-sleeved button-down shirt with a navy blue quilted vest over it. He has a slight smile." },
+                            { type: "obj", bbox: [34, 137, 1000, 617], desc: "Max Verstappen, a fair-skinned male Formula 1 driver, positioned in the center. He is facing forward with a joyful expression and a slight smile. He wears a navy blue Red Bull Racing team uniform with numerous sponsor logos and a matching baseball cap with the number '1'. He is holding a white and red racing helmet in his hands. He has a silver watch on his left wrist." },
+                            { type: "obj", bbox: [422, 212, 792, 452], desc: "Max Verstappen's racing helmet, held in front of his chest. It features a white, red, and yellow design with the Red Bull logo and the 'Player 0.0' branding. The visor is clear and open." },
+                            { type: "text", bbox: [657, 0, 755, 142], text: "F1", desc: "Large, stylized red logo on a black and purple background in the lower left." },
+                            { type: "text", bbox: [768, 0, 818, 147], text: "Formula 1\nWorld Championship™", desc: "Small white sans-serif text below the F1 logo on the left side." },
+                            { type: "text", bbox: [78, 447, 117, 510], text: "ORACLE\nRed Bull\nRacing", desc: "Very small white and orange logo on the front of the navy blue cap." },
+                            { type: "text", bbox: [78, 417, 120, 440], text: "1", desc: "Bold red numeral '1' on the front left side of the navy blue cap." },
+                            { type: "text", bbox: [332, 442, 363, 483], text: "Red Bull", desc: "Small yellow and red text logo on the collar of the uniform." },
+                            { type: "text", bbox: [373, 490, 423, 532], text: "RAUCH", desc: "Small yellow and blue logo on the right chest of the uniform." },
+                            { type: "text", bbox: [422, 473, 500, 532], text: "BYBIT\nHONDA", desc: "Medium-sized white sans-serif text on the right chest of the uniform." },
+                            { type: "text", bbox: [558, 317, 715, 355], text: "Player 0.0", desc: "Black sans-serif text on a white band on the racing helmet." }]
+                    }
+                }
+            }
+        };
+
+        /* =================================================================
+           CAPTION BUILD / PARSE  (enforces canonical key order)
+        ================================================================= */
+        function buildCaption() {
+            const c = {};
+            const hld = state.caption.high_level_description;
+            if (hld) c.high_level_description = hld;
+            if (state.styleEnabled) {
+                const s = state.caption.style_description;
+                const out = {};
+                out.aesthetics = s.aesthetics || "";
+                out.lighting = s.lighting || "";
+                if (state.styleMode === "photo") {
+                    out.photo = s.photo || "";
+                    out.medium = s.medium || "photograph";
+                } else {
+                    out.medium = s.medium || "illustration";
+                    out.art_style = s.art_style || "";
+                }
+                if (s.color_palette && s.color_palette.length) out.color_palette = s.color_palette.slice();
+                c.style_description = out;
+            }
+            const cd = state.caption.compositional_deconstruction;
+            c.compositional_deconstruction = {
+                background: cd.background || "",
+                elements: cd.elements.map(e => {
+                    const o = { type: e.type };
+                    if (e.bbox) o.bbox = e.bbox.map(v => Math.round(v));
+                    if (e.type === "text") o.text = e.text || "";
+                    o.desc = e.desc || "";
+                    if (e.color_palette && e.color_palette.length) o.color_palette = e.color_palette.slice();
+                    return o;
+                })
+            };
+            return c;
+        }
+
+        function loadCaption(obj) {
+            const c = {
+                high_level_description: typeof obj.high_level_description === "string" ? obj.high_level_description : "",
+                style_description: { aesthetics: "", lighting: "", photo: "", art_style: "", medium: "photograph", color_palette: [] },
+                compositional_deconstruction: { background: "", elements: [] }
+            };
+            if (obj.style_description && typeof obj.style_description === "object") {
+                state.styleEnabled = true;
+                const s = obj.style_description;
+                c.style_description.aesthetics = s.aesthetics || "";
+                c.style_description.lighting = s.lighting || "";
+                c.style_description.medium = s.medium || "";
+                c.style_description.photo = s.photo || "";
+                c.style_description.art_style = s.art_style || "";
+                c.style_description.color_palette = Array.isArray(s.color_palette) ? s.color_palette.slice() : [];
+                state.styleMode = ("art_style" in s && !("photo" in s)) ? "art" : "photo";
+            } else state.styleEnabled = false;
+            const cd = obj.compositional_deconstruction || {};
+            c.compositional_deconstruction.background = cd.background || "";
+            c.compositional_deconstruction.elements = (Array.isArray(cd.elements) ? cd.elements : []).map(e => ({
+                type: e.type === "text" ? "text" : "obj",
+                bbox: (Array.isArray(e.bbox) && e.bbox.length === 4) ? e.bbox.map(Number) : null,
+                text: e.text !== undefined ? String(e.text) : "",
+                desc: e.desc || "",
+                color_palette: Array.isArray(e.color_palette) ? e.color_palette.slice() : []
+            }));
+            state.caption = c;
+            state.selected = c.compositional_deconstruction.elements.length ? 0 : -1;
+        }
+
+        /* =================================================================
+           VERIFIER  (mirrors CaptionVerifier rules from the guide)
+        ================================================================= */
+        function verify(cap, rawString) {
+            const issues = []; // {level:'err'|'warn'|'info', msg}
+            const E = (m) => issues.push({ level: "err", msg: m }), W = (m) => issues.push({ level: "warn", msg: m });
+
+            if (!cap.compositional_deconstruction) { E("<b>compositional_deconstruction</b> is required."); return issues; }
+            const cd = cap.compositional_deconstruction;
+            if (typeof cd.background !== "string") E("<b>compositional_deconstruction.background</b> is required (string).");
+            if (!Array.isArray(cd.elements)) E("<b>compositional_deconstruction.elements</b> is required (list).");
+            const cdKeys = Object.keys(cd);
+            if (cdKeys.indexOf("background") > cdKeys.indexOf("elements")) W("<b>background</b> must come before <b>elements</b>.");
+
+            // top-level order
+            const order = ["high_level_description", "style_description", "compositional_deconstruction"];
+            const tk = Object.keys(cap);
+            let last = -1;
+            for (const k of tk) {
+                const i = order.indexOf(k);
+                if (i === -1) W(`Unknown top-level key <b>${k}</b>.`);
+                else { if (i < last) W(`Top-level key <b>${k}</b> is out of order.`); last = Math.max(last, i); }
+            }
+            if (!cap.high_level_description) W("<b>high_level_description</b> missing — strongly recommended.");
+            else {
+                const wc = cap.high_level_description.trim().split(/\s+/).filter(Boolean).length;
+                if (wc > 50) W(`high_level_description is ${wc} words (50-word cap).`);
+            }
+
+            // style_description
+            if (cap.style_description) {
+                const s = cap.style_description, sk = Object.keys(s);
+                const hasPhoto = "photo" in s, hasArt = "art_style" in s;
+                if (hasPhoto && hasArt) E("style_description must contain exactly ONE of <b>photo</b> / <b>art_style</b> — both present.");
+                if (!hasPhoto && !hasArt) E("style_description must contain exactly one of <b>photo</b> / <b>art_style</b> — neither present.");
+                for (const req of ["aesthetics", "lighting", "medium"]) if (!(req in s)) E(`style_description.<b>${req}</b> is required.`);
+                const expected = hasArt && !hasPhoto
+                    ? ["aesthetics", "lighting", "medium", "art_style", "color_palette"]
+                    : ["aesthetics", "lighting", "photo", "medium", "color_palette"];
+                let li = -1;
+                for (const k of sk) {
+                    const i = expected.indexOf(k);
+                    if (i === -1) W(`style_description: unknown key <b>${k}</b>.`);
+                    else { if (i < li) W(`style_description key <b>${k}</b> is out of order (expected ${expected.join(" → ")}).`); li = Math.max(li, i); }
+                }
+                if (Array.isArray(s.color_palette)) {
+                    if (s.color_palette.length > 16) E(`style color_palette has ${s.color_palette.length} colors (max 16).`);
+                    s.color_palette.forEach(h => { if (!HEX_RE.test(h)) E(`Bad hex <b>${h}</b> — must be uppercase #RRGGBB.`); });
+                    if (sk[sk.length - 1] !== "color_palette") W("color_palette must remain the final style_description key.");
+                }
+                if (hasPhoto && s.medium && s.medium !== "photograph") W(`<b>photo</b> field is paired with medium "${s.medium}" — expected "photograph".`);
+                if (hasArt && s.medium === "photograph") W(`<b>art_style</b> is paired with medium "photograph" — use a non-photo medium.`);
+            }
+
+            // elements
+            (cd.elements || []).forEach((e, idx) => {
+                const n = `Element ${idx + 1}`;
+                if (e.type !== "obj" && e.type !== "text") E(`${n}: type must be "obj" or "text" (got "${e.type}").`);
+                const expected = e.type === "text" ? ["type", "bbox", "text", "desc", "color_palette"] : ["type", "bbox", "desc", "color_palette"];
+                const ek = Object.keys(e); let li = -1;
+                for (const k of ek) {
+                    const i = expected.indexOf(k);
+                    if (i === -1) W(`${n}: unknown key <b>${k}</b>.`);
+                    else { if (i < li) W(`${n}: key <b>${k}</b> out of order (expected ${expected.join(" → ")}).`); li = Math.max(li, i); }
+                }
+                if (e.type === "text" && !("text" in e)) E(`${n}: text element missing <b>text</b> field.`);
+                if (!("desc" in e)) E(`${n}: missing <b>desc</b>.`);
+                else {
+                    const wc = (e.desc || "").trim().split(/\s+/).filter(Boolean).length;
+                    if (e.type === "obj" && wc > 60) W(`${n}: desc is ${wc} words (60-word hard cap).`);
+                }
+                if ("bbox" in e) {
+                    const b = e.bbox;
+                    if (!Array.isArray(b) || b.length !== 4 || b.some(v => typeof v !== "number")) E(`${n}: bbox must be [y1,x1,y2,x2] numbers.`);
+                    else {
+                        if (b.some(v => v < 0 || v > 1000)) E(`${n}: bbox values must be within 0–1000.`);
+                        if (!(b[0] < b[2])) E(`${n}: bbox needs y1 &lt; y2.`);
+                        if (!(b[1] < b[3])) E(`${n}: bbox needs x1 &lt; x2.`);
+                    }
+                }
+                if (Array.isArray(e.color_palette)) {
+                    if (e.color_palette.length > 5) E(`${n}: element color_palette max 5 colors.`);
+                    e.color_palette.forEach(h => { if (!HEX_RE.test(h)) E(`${n}: bad hex <b>${h}</b>.`); });
+                }
+                // hedge / banned phrase lint
+                const hedges = /\b(things like|such as|e\.g\.|for example|or similar|various|could include|might be|some kind of|implied|suggested|hinted|possibly|perhaps|maybe|could be|reads as)\b/i;
+                const blob = (e.desc || "");
+                if (hedges.test(blob)) W(`${n}: hedge phrasing detected ("${blob.match(hedges)[0]}") — commit to one concrete value.`);
+                if (/\bshadow\b/i.test(blob) && e.type === "obj") W(`${n}: shadows belong in <b>background</b> (scene-wide) or should be omitted.`);
+            });
+
+            // background lint
+            if (typeof cd.background === "string") {
+                const bgban = /\b(film grain|lens flare|chromatic aberration|vignett|bokeh|halftone|risograph|paper texture|brushstroke texture)\b/i;
+                if (bgban.test(cd.background)) W(`background: medium/post-processing effect detected ("${cd.background.match(bgban)[0]}") — route to high_level_description instead.`);
+                if (/\b(rows of .* recede|seated at the|cars parked|filled with people|customers seated)\b/i.test(cd.background))
+                    W("background: arrangement of placeable things detected — emit them as elements instead.");
+            }
+            // warm-grading lint
+            const all = JSON.stringify(cap);
+            if (/warm (light|window light|tone|grading|glow)/i.test(all)) W(`"warm" grading language detected — describe the light SOURCE concretely and keep the global grade neutral.`);
+            // ascii escape check
+            if (rawString && /\\u[0-9a-fA-F]{4}/.test(rawString)) W("Raw JSON contains \\uXXXX escapes — serialize with ensure_ascii=False / keep literal characters.");
+            return issues;
+        }
+
+        /* =================================================================
+           RENDER: designer form
+        ================================================================= */
+        function syncFormFromState() {
+            $("hld").value = state.caption.high_level_description;
+            updateWordCount();
+            $("styleEnabled").checked = state.styleEnabled;
+            $("styleBody").style.opacity = state.styleEnabled ? 1 : .35;
+            $("styleBody").style.pointerEvents = state.styleEnabled ? "auto" : "none";
+            const s = state.caption.style_description;
+            $("st_aesthetics").value = s.aesthetics || ""; $("st_lighting").value = s.lighting || "";
+            $("st_photo").value = s.photo || ""; $("st_art").value = s.art_style || "";
+            $("st_medium").value = s.medium || "photograph";
+            setStyleMode(state.styleMode, false);
+            renderPalette($("stylePalette"), s.color_palette, 16, () => commit());
+            $("bg").value = state.caption.compositional_deconstruction.background;
+            renderElements();
+        }
+
+        function updateWordCount() {
+            const wc = $("hld").value.trim().split(/\s+/).filter(Boolean).length;
+            const el = $("hldCount"); el.textContent = wc + " words";
+            el.classList.toggle("over", wc > 50);
+        }
+
+        function setStyleMode(mode, fromClick = true) {
+            state.styleMode = mode;
+            $("modePhoto").classList.toggle("on", mode === "photo");
+            $("modeArt").classList.toggle("on", mode === "art");
+            $("photoField").style.display = mode === "photo" ? "" : "none";
+            $("artField").style.display = mode === "art" ? "" : "none";
+            if (fromClick) {
+                if (mode === "art" && state.caption.style_description.medium === "photograph")
+                    state.caption.style_description.medium = "illustration", $("st_medium").value = "illustration";
+                if (mode === "photo") { state.caption.style_description.medium = "photograph"; $("st_medium").value = "photograph"; }
+                commit();
+            }
+        }
+
+        function renderPalette(container, arr, max, onChange) {
+            container.innerHTML = "";
+            arr.forEach((hex, i) => {
+                const wrap = document.createElement("div"); wrap.className = "swatchwrap";
+                const sw = document.createElement("div"); sw.className = "swatch"; sw.style.background = HEX_RE.test(hex) ? hex : "#000";
+                const inp = document.createElement("input"); inp.type = "color";
+                inp.value = HEX_RE.test(hex) ? hex : "#000000";
+                inp.oninput = () => { arr[i] = inp.value.toUpperCase(); sw.style.background = arr[i]; lbl.textContent = arr[i]; onChange(); };
+                const x = document.createElement("span"); x.className = "x"; x.textContent = "✕";
+                x.onclick = ev => { ev.stopPropagation(); arr.splice(i, 1); onChange(); renderPalette(container, arr, max, onChange); };
+                sw.append(inp, x);
+                const lbl = document.createElement("div"); lbl.className = "hexlabel"; lbl.textContent = hex;
+                wrap.append(sw, lbl); container.appendChild(wrap);
+            });
+            if (arr.length < max) {
+                const add = document.createElement("button"); add.className = "addswatch"; add.textContent = "+";
+                add.onclick = () => { arr.push("#4F8CFF"); onChange(); renderPalette(container, arr, max, onChange); };
+                container.appendChild(add);
+            }
+        }
+
+        function renderElements() {
+            const list = $("elList"); list.innerHTML = "";
+            const els = state.caption.compositional_deconstruction.elements;
+            if (!els.length) { list.innerHTML = '<div class="hint" style="padding:6px">No elements yet — add an obj or text element, or draw on the canvas.</div>'; }
+            els.forEach((e, i) => {
+                const card = document.createElement("div");
+                card.className = "elcard" + (e.type === "text" ? " texttype" : "") + (i === state.selected ? " selected" : "") + (e._collapsed ? " collapsed" : "");
+                // header
+                const head = document.createElement("div"); head.className = "elhead";
+                head.innerHTML = `<span class="badge">${e.type.toUpperCase()} ${i + 1}</span>
+      <span class="summary">${escapeHtml(e.type === "text" ? (e.text || "(empty text)") : (e.desc || "(no description)"))}</span>`;
+                const acts = document.createElement("div"); acts.className = "elactions";
+                const mk = (t, fn, cls) => { const b = document.createElement("button"); b.className = "small" + (cls ? " " + cls : ""); b.textContent = t; b.onclick = ev => { ev.stopPropagation(); fn(); }; return b; };
+                acts.append(
+                    mk("↑", () => { if (i > 0) { els.splice(i - 1, 0, els.splice(i, 1)[0]); if (state.selected === i) state.selected = i - 1; commit(true); } }),
+                    mk("↓", () => { if (i < els.length - 1) { els.splice(i + 1, 0, els.splice(i, 1)[0]); if (state.selected === i) state.selected = i + 1; commit(true); } }),
+                    mk("⧉", () => { els.splice(i + 1, 0, JSON.parse(JSON.stringify(e))); commit(true); }),
+                    mk("✕", () => { els.splice(i, 1); if (state.selected >= els.length) state.selected = els.length - 1; commit(true); }, "danger"));
+                head.appendChild(acts);
+                head.onclick = () => { state.selected = i; e._collapsed = !e._collapsed && i === state.selected && card.classList.contains("selected") ? e._collapsed : e._collapsed; selectEl(i); };
+                head.ondblclick = () => { e._collapsed = !e._collapsed; renderElements(); };
+                card.appendChild(head);
+
+                // body
+                const body = document.createElement("div"); body.className = "elbody";
+                // type
+                const typeRow = document.createElement("div"); typeRow.className = "row";
+                typeRow.innerHTML = `<div class="field" style="flex:0 0 110px"><label>type</label></div>`;
+                const tsel = document.createElement("select");
+                tsel.innerHTML = '<option value="obj">obj</option><option value="text">text</option>';
+                tsel.value = e.type; tsel.onchange = () => { e.type = tsel.value; commit(true); };
+                typeRow.children[0].appendChild(tsel);
+
+                // bbox
+                const bboxField = document.createElement("div"); bboxField.className = "field"; bboxField.style.flex = "1";
+                bboxField.innerHTML = '<label>bbox [y1, x1, y2, x2] · 0–1000</label>';
+                const hasB = document.createElement("label");
+                hasB.style.cssText = "font-size:11px;color:var(--dim);display:flex;align-items:center;gap:5px;margin-bottom:4px";
+                const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!e.bbox;
+                cb.onchange = () => { e.bbox = cb.checked ? [250, 250, 750, 750] : null; commit(true); };
+                hasB.append(cb, document.createTextNode("include bbox (omit for dense/unenumerable visuals)"));
+                bboxField.appendChild(hasB);
+                if (e.bbox) {
+                    const grid = document.createElement("div"); grid.className = "bboxgrid";
+                    ["y1", "x1", "y2", "x2"].forEach((lbl, k) => {
+                        const w = document.createElement("div");
+                        w.innerHTML = `<div class="lbl">${lbl}</div>`;
+                        const inp = document.createElement("input"); inp.type = "number"; inp.min = 0; inp.max = 1000; inp.value = Math.round(e.bbox[k]);
+                        inp.onchange = () => { e.bbox[k] = clamp(+inp.value || 0, 0, 1000); commit(); renderCanvas(); };
+                        w.appendChild(inp); grid.appendChild(w);
+                    });
+                    bboxField.appendChild(grid);
+                }
+                typeRow.appendChild(bboxField);
+                body.appendChild(typeRow);
+
+                // text field
+                if (e.type === "text") {
+                    const tf = document.createElement("div"); tf.className = "field";
+                    tf.innerHTML = '<label>text (verbatim — use \\n / Enter for line breaks)</label>';
+                    const ta = document.createElement("textarea"); ta.rows = 2; ta.value = e.text || "";
+                    ta.oninput = () => { e.text = ta.value; commitSoft(); };
+                    tf.appendChild(ta); body.appendChild(tf);
+                }
+                // desc
+                const df = document.createElement("div"); df.className = "field";
+                const dwc = (e.desc || "").trim().split(/\s+/).filter(Boolean).length;
+                df.innerHTML = `<label>desc <span class="wordcount${dwc > 60 ? " over" : ""}">${dwc} words / 60</span></label>`;
+                const dta = document.createElement("textarea"); dta.rows = 3; dta.value = e.desc || "";
+                dta.placeholder = "Identity first, then major attributes, then one distinguishing detail. Standalone catalog entry.";
+                dta.oninput = () => { e.desc = dta.value; commitSoft(); };
+                df.appendChild(dta); body.appendChild(df);
+                // element palette
+                const pf = document.createElement("div"); pf.className = "field";
+                pf.innerHTML = '<label>element color_palette (≤5)</label>';
+                const pal = document.createElement("div"); pal.className = "palette";
+                renderPalette(pal, e.color_palette, 5, () => commit());
+                pf.appendChild(pal); body.appendChild(pf);
+
+                card.appendChild(body);
+                list.appendChild(card);
+            });
+        }
+
+        function escapeHtml(s) { return (s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+        /* =================================================================
+           RENDER: canvas
+        ================================================================= */
+        function parseAspect(a) {
+            const m = /^(\d+)\s*:\s*(\d+)$/.exec(a);
+            return m ? [+m[1], +m[2]] : [1, 1];
+        }
+        function sizeFrame() {
+            const wrap = $("canvaswrap"), frame = $("frame");
+            const [W, H] = parseAspect(state.aspect);
+            const availW = wrap.clientWidth - 36, availH = wrap.clientHeight - 36;
+            let w = availW, h = w * H / W;
+            if (h > availH) { h = availH; w = h * W / H; }
+            frame.style.width = Math.max(80, w) + "px"; frame.style.height = Math.max(80, h) + "px";
+        }
+        function renderCanvas() {
+            sizeFrame();
+            const frame = $("frame");
+            frame.querySelectorAll(".bbox").forEach(n => n.remove());
+            const els = state.caption.compositional_deconstruction.elements;
+            $("bgPreview").textContent = state.caption.compositional_deconstruction.background || "";
+            const fw = frame.clientWidth, fh = frame.clientHeight;
+            const showLabels = $("showLabels").checked;
+            els.forEach((e, i) => {
+                if (!e.bbox) return;
+                const [y1, x1, y2, x2] = e.bbox;
+                const div = document.createElement("div");
+                div.className = "bbox" + (e.type === "text" ? " texttype" : "") + (i === state.selected ? " selected" : "");
+                div.style.left = (x1 / 1000 * fw) + "px"; div.style.top = (y1 / 1000 * fh) + "px";
+                div.style.width = ((x2 - x1) / 1000 * fw) + "px"; div.style.height = ((y2 - y1) / 1000 * fh) + "px";
+                div.dataset.idx = i;
+                if (e.color_palette && e.color_palette[0] && HEX_RE.test(e.color_palette[0]))
+                    div.style.background = hexToRgba(e.color_palette[0], .18);
+                if (showLabels) {
+                    const tag = document.createElement("div"); tag.className = "tag";
+                    tag.textContent = `${i + 1} · ${e.type === "text" ? "TEXT" : "OBJ"} ${e.type === "text" ? "" : shorten(e.desc, 28)}`;
+                    div.appendChild(tag);
+                }
+                if (e.type === "text" && e.text) {
+                    const inner = document.createElement("div"); inner.className = "inner";
+                    const tp = document.createElement("div"); tp.className = "txtprev";
+                    tp.style.fontSize = clamp((y2 - y1) / 1000 * fh / (e.text.split("\n").length * 1.6), 8, 42) + "px";
+                    tp.textContent = e.text;
+                    inner.appendChild(tp); div.appendChild(inner);
+                }
+                ["nw", "ne", "sw", "se"].forEach(p => {
+                    const h = document.createElement("div"); h.className = "handle h-" + p; h.dataset.handle = p; div.appendChild(h);
+                });
+                frame.appendChild(div);
+            });
+            renderNoBboxChips();
+        }
+        function shorten(s, n) { s = s || ""; return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+        function hexToRgba(h, a) { return `rgba(${parseInt(h.slice(1, 3), 16)},${parseInt(h.slice(3, 5), 16)},${parseInt(h.slice(5, 7), 16)},${a})`; }
+        function renderNoBboxChips() {
+            const wrap = $("nobboxChips"); wrap.innerHTML = "";
+            const els = state.caption.compositional_deconstruction.elements;
+            const noB = els.map((e, i) => ({ e, i })).filter(x => !x.e.bbox);
+            if (!noB.length) { wrap.style.display = "none"; return; }
+            wrap.style.display = "flex";
+            const lbl = document.createElement("span"); lbl.style.cssText = "font-size:10px;color:var(--dim);align-self:center";
+            lbl.textContent = "no bbox:"; wrap.appendChild(lbl);
+            noB.forEach(({ e, i }) => {
+                const c = document.createElement("span"); c.className = "chip";
+                c.textContent = `${i + 1} · ${e.type} — ${shorten(e.type === "text" ? e.text : e.desc, 24)}`;
+                c.title = "Click to select; drag on canvas to give it a bbox";
+                c.onclick = () => selectEl(i);
+                wrap.appendChild(c);
+            });
+        }
+
+        /* ---- canvas interaction: select / move / resize / draw ---- */
+        let drag = null;
+        $("frame").addEventListener("mousedown", ev => {
+            const frame = $("frame"), r = frame.getBoundingClientRect();
+            const px = ev.clientX - r.left, py = ev.clientY - r.top;
+            const handle = ev.target.closest(".handle");
+            const box = ev.target.closest(".bbox");
+            if (handle && box) {
+                const idx = +box.dataset.idx; selectEl(idx, false);
+                drag = { mode: "resize", idx, corner: handle.dataset.handle, start: [px, py], orig: state.caption.compositional_deconstruction.elements[idx].bbox.slice() };
+            } else if (box) {
+                const idx = +box.dataset.idx; selectEl(idx, false);
+                drag = { mode: "move", idx, start: [px, py], orig: state.caption.compositional_deconstruction.elements[idx].bbox.slice() };
+            } else {
+                // draw new bbox: applies to selected element without bbox, else creates new obj
+                drag = { mode: "draw", start: [px, py], created: false };
+            }
+            ev.preventDefault();
+        });
+        window.addEventListener("mousemove", ev => {
+            const frame = $("frame"), r = frame.getBoundingClientRect();
+            const fw = frame.clientWidth, fh = frame.clientHeight;
+            const px = clamp(ev.clientX - r.left, 0, fw), py = clamp(ev.clientY - r.top, 0, fh);
+            const nx = Math.round(px / fw * 1000), ny = Math.round(py / fh * 1000);
+            $("coordreadout").textContent = `x:${nx} y:${ny}`;
+            if (!drag) return;
+            const els = state.caption.compositional_deconstruction.elements;
+            if (drag.mode === "move") {
+                const dY = Math.round((py - drag.start[1]) / fh * 1000), dX = Math.round((px - drag.start[0]) / fw * 1000);
+                const o = drag.orig, h = o[2] - o[0], w = o[3] - o[1];
+                let y1 = clamp(o[0] + dY, 0, 1000 - h), x1 = clamp(o[1] + dX, 0, 1000 - w);
+                els[drag.idx].bbox = [y1, x1, y1 + h, x1 + w]; renderCanvas();
+            } else if (drag.mode === "resize") {
+                const o = drag.orig.slice(); const c = drag.corner;
+                if (c.includes("n")) o[0] = clamp(ny, 0, o[2] - 10);
+                if (c.includes("s")) o[2] = clamp(ny, o[0] + 10, 1000);
+                if (c.includes("w")) o[1] = clamp(nx, 0, o[3] - 10);
+                if (c.includes("e")) o[3] = clamp(nx, o[1] + 10, 1000);
+                els[drag.idx].bbox = o; renderCanvas();
+            } else if (drag.mode === "draw") {
+                const sy = Math.round(drag.start[1] / fh * 1000), sx = Math.round(drag.start[0] / fw * 1000);
+                const bb = [Math.min(sy, ny), Math.min(sx, nx), Math.max(sy, ny), Math.max(sx, nx)];
+                if (bb[2] - bb[0] < 8 || bb[3] - bb[1] < 8) return;
+                if (!drag.created) {
+                    let idx = state.selected;
+                    if (idx < 0 || els[idx]?.bbox) { // create new obj element
+                        els.push({ type: "obj", bbox: bb, text: "", desc: "", color_palette: [] });
+                        idx = els.length - 1;
+                    }
+                    state.selected = idx; drag.created = true; drag.idx = idx;
+                }
+                els[drag.idx].bbox = bb; renderCanvas();
+            }
+        });
+        window.addEventListener("mouseup", () => {
+            if (drag) { const wasDraw = drag.mode === "draw" && drag.created; drag = null; commit(true); if (wasDraw) selectEl(state.selected); }
+        });
+        window.addEventListener("keydown", ev => {
+            if ((ev.key === "Backspace" || ev.key === "Delete") && state.selected >= 0
+                && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+                const e = state.caption.compositional_deconstruction.elements[state.selected];
+                if (e && e.bbox) { e.bbox = null; commit(true); ev.preventDefault(); }
+            }
+        });
+
+        function selectEl(i, rerenderForm = true) {
+            state.selected = i;
+            renderCanvas();
+            if (rerenderForm) renderElements();
+            else document.querySelectorAll(".elcard").forEach((c, k) => c.classList.toggle("selected", k === i));
+            const card = document.querySelectorAll(".elcard")[i];
+            if (card) card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+
+        /* =================================================================
+           JSON pane
+        ================================================================= */
+        function syncJsonFromState() {
+            $("jsontext").value = JSON.stringify(buildCaption(), null, 2);
+            setJsonStatus("synced from designer", "ok");
+        }
+        function setJsonStatus(msg, cls) { const s = $("jsonstatus"); s.textContent = msg; s.className = cls || ""; }
+        $("applyJson").onclick = () => {
+            try {
+                const obj = JSON.parse($("jsontext").value);
+                loadCaption(obj);
+                commit(true, false);
+                setJsonStatus("applied ✓", "ok");
+            } catch (e) { setJsonStatus("Parse error: " + e.message, "err"); }
+        };
+        $("formatJson").onclick = () => { try { $("jsontext").value = JSON.stringify(JSON.parse($("jsontext").value), null, 2); setJsonStatus("formatted", "ok"); } catch (e) { setJsonStatus(e.message, "err"); } };
+        $("minifyJson").onclick = () => { try { $("jsontext").value = JSON.stringify(JSON.parse($("jsontext").value)); setJsonStatus("minified", "ok"); } catch (e) { setJsonStatus(e.message, "err"); } };
+        $("jsontext").addEventListener("input", () => {
+            try { JSON.parse($("jsontext").value); setJsonStatus("valid JSON — click Apply", "ok"); }
+            catch (e) { setJsonStatus("invalid: " + e.message, "err"); }
+        });
+
+        /* =================================================================
+           COMMIT (state → all views) + validation
+        ================================================================= */
+        let softTimer = null;
+        function commitSoft() { // for keystrokes: validate + JSON sync, skip form rebuild
+            clearTimeout(softTimer);
+            softTimer = setTimeout(() => { syncJsonFromState(); runValidation(); renderCanvas(); }, 200);
+        }
+        function commit(rebuildForm = false, syncJson = true) {
+            if (rebuildForm) syncFormFromState();
+            if (syncJson) syncJsonFromState();
+            renderCanvas(); runValidation();
+        }
+        function runValidation() {
+            const issues = verify(buildCaption(), $("jsontext").value);
+            const list = $("vallist"); list.innerHTML = "";
+            if (!issues.length) list.innerHTML = '<div class="valitem info">No issues — caption matches the training schema. ✓</div>';
+            issues.forEach(it => {
+                const d = document.createElement("div"); d.className = "valitem " + it.level;
+                d.innerHTML = (it.level === "err" ? "⛔ " : "⚠️ ") + it.msg; list.appendChild(d);
+            });
+            const errs = issues.filter(i => i.level === "err").length, warns = issues.filter(i => i.level === "warn").length;
+            const b = $("valBadge");
+            if (errs) { b.className = "valcount err"; b.textContent = errs + " error" + (errs > 1 ? "s" : "") + (warns ? ` · ${warns} warn` : ""); }
+            else if (warns) { b.className = "valcount warn"; b.textContent = warns + " warning" + (warns > 1 ? "s" : ""); }
+            else { b.className = "valcount ok"; b.textContent = "OK"; }
+        }
+
+        /* =================================================================
+           EXTERNAL WEBUI BRIDGE
+        ================================================================= */
+        function bridgeTarget() {
+            if (window.opener && !window.opener.closed) return window.opener;
+            if (window.parent && window.parent !== window) return window.parent;
+            return null;
+        }
+        function bridgeOrigin() { return window.location.origin; }
+        function setAspect(aspect) {
+            if (!aspect || !/^\d+\s*:\s*\d+$/.test(aspect)) return;
+            state.aspect = aspect.replace(/\s/g, "");
+            const select = $("aspectSel"), custom = $("aspectCustom");
+            const opt = [...select.options].find(o => o.value === state.aspect || o.text === state.aspect);
+            if (opt && opt.value !== "custom") {
+                select.value = opt.value || opt.text;
+                custom.style.display = "none";
+            } else {
+                select.value = "custom";
+                custom.value = state.aspect;
+                custom.style.display = "";
+            }
+        }
+        function applyBridgePayload(payload) {
+            if (!payload || typeof payload !== "object") return;
+            let caption = null;
+            if (payload.caption) {
+                try { caption = JSON.parse(payload.caption); }
+                catch (e) { toast("Editor seed JSON failed: " + e.message); }
+            }
+            if (!caption && payload.plain_prompt) {
+                caption = {
+                    high_level_description: payload.plain_prompt,
+                    style_description: { aesthetics: "", lighting: "", photo: "", medium: "photograph", color_palette: [] },
+                    compositional_deconstruction: { background: "", elements: [] }
+                };
+            }
+            if (!caption) return;
+            setAspect(payload.aspect || caption.aspect_ratio || state.aspect);
+            loadCaption(caption);
+            commit(true);
+            toast(payload.source === "last_generation" ? "Loaded last generated caption" : "Loaded caption");
+        }
+        function sendCaptionToWebUI() {
+            const target = bridgeTarget();
+            const caption = JSON.stringify(buildCaption());
+            if (!target) {
+                navigator.clipboard.writeText(caption).then(() => toast("Minified JSON copied"));
+                return;
+            }
+            target.postMessage({
+                type: "ideogram4-json-designer-save",
+                caption,
+                prettyCaption: JSON.stringify(buildCaption(), null, 2),
+                aspect: state.aspect
+            }, bridgeOrigin());
+            toast("Applied to WebUI");
+        }
+        window.addEventListener("message", ev => {
+            if (ev.origin !== bridgeOrigin()) return;
+            const msg = ev.data || {};
+            if (msg.type === "ideogram4-json-designer-load") applyBridgePayload(msg.payload);
+        });
+        function notifyWebUIReady() {
+            const target = bridgeTarget();
+            if (target) target.postMessage({ type: "ideogram4-json-designer-ready" }, bridgeOrigin());
+        }
+
+        /* =================================================================
+           WIRING
+        ================================================================= */
+        // tabs
+        document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+            document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+            document.querySelectorAll(".tabpane").forEach(x => x.classList.remove("active"));
+            t.classList.add("active");
+            $(t.dataset.tab === "json" ? "jsonpane" : "designer").classList.add("active");
+        });
+        // collapsible sections
+        document.querySelectorAll(".sectionhead").forEach(h => h.addEventListener("click", ev => {
+            if (ev.target.closest("button,input,label.switchrow")) return;
+            h.parentElement.classList.toggle("collapsed");
+        }));
+        // header controls
+        $("aspectSel").onchange = () => {
+            if ($("aspectSel").value === "custom") { $("aspectCustom").style.display = ""; $("aspectCustom").focus(); }
+            else { $("aspectCustom").style.display = "none"; state.aspect = $("aspectSel").value; renderCanvas(); }
+        };
+        $("aspectCustom").onchange = () => {
+            if (/^\d+\s*:\s*\d+$/.test($("aspectCustom").value)) { state.aspect = $("aspectCustom").value.replace(/\s/g, ""); renderCanvas(); }
+        };
+        $("exampleSel").onchange = () => {
+            const k = $("exampleSel").value; if (!k) return;
+            const ex = JSON.parse(JSON.stringify(EXAMPLES[k]));
+            state.aspect = ex.aspect;
+            const opt = [...$("aspectSel").options].find(o => o.value === ex.aspect || o.text === ex.aspect);
+            if (opt) { $("aspectSel").value = opt.value === "custom" ? opt.value : ex.aspect; $("aspectCustom").style.display = "none"; }
+            loadCaption(ex.caption); commit(true); $("exampleSel").value = "";
+        };
+        // fields
+        $("hld").oninput = () => { state.caption.high_level_description = $("hld").value; updateWordCount(); commitSoft(); };
+        $("styleEnabled").onchange = () => { state.styleEnabled = $("styleEnabled").checked; commit(true); };
+        $("modePhoto").onclick = () => setStyleMode("photo");
+        $("modeArt").onclick = () => setStyleMode("art");
+        ["st_aesthetics", "st_lighting", "st_photo", "st_art"].forEach(id => {
+            $(id).oninput = () => {
+                const s = state.caption.style_description;
+                s.aesthetics = $("st_aesthetics").value; s.lighting = $("st_lighting").value;
+                s.photo = $("st_photo").value; s.art_style = $("st_art").value; commitSoft();
+            };
+        });
+        $("st_medium").onchange = () => { state.caption.style_description.medium = $("st_medium").value; commit(); };
+        $("bg").oninput = () => { state.caption.compositional_deconstruction.background = $("bg").value; commitSoft(); };
+        $("addObj").onclick = () => { state.caption.compositional_deconstruction.elements.push({ type: "obj", bbox: [250, 250, 750, 750], text: "", desc: "", color_palette: [] }); state.selected = state.caption.compositional_deconstruction.elements.length - 1; commit(true); };
+        $("addText").onclick = () => { state.caption.compositional_deconstruction.elements.push({ type: "text", bbox: [420, 200, 580, 800], text: "SAMPLE", desc: "", color_palette: [] }); state.selected = state.caption.compositional_deconstruction.elements.length - 1; commit(true); };
+        $("showLabels").onchange = renderCanvas;
+        $("valhead").onclick = () => $("validation").classList.toggle("open");
+        // import / export
+        $("importBtn").onclick = () => $("fileInput").click();
+        $("fileInput").onchange = ev => {
+            const f = ev.target.files[0]; if (!f) return;
+            const rd = new FileReader();
+            rd.onload = () => { try { loadCaption(JSON.parse(rd.result)); commit(true); toast("Imported ✓"); } catch (e) { toast("Import failed: " + e.message); } };
+            rd.readAsText(f); ev.target.value = "";
+        };
+        $("downloadBtn").onclick = () => {
+            const blob = new Blob([JSON.stringify(buildCaption(), null, 2)], { type: "application/json" });
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "ideogram4-caption.json"; a.click();
+        };
+        $("copyMin").onclick = () => { navigator.clipboard.writeText(JSON.stringify(buildCaption())).then(() => toast("Minified JSON copied — paste as the pipe() prompt")); };
+        $("copyPretty").onclick = () => { navigator.clipboard.writeText(JSON.stringify(buildCaption(), null, 2)).then(() => toast("Pretty JSON copied")); };
+        $("applyWebUI").onclick = sendCaptionToWebUI;
+        function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 1800); }
+        // split drag
+        (() => {
+            let dragging = false;
+            $("dragbar").onmousedown = () => dragging = true;
+            window.addEventListener("mousemove", e => {
+                if (!dragging) return;
+                const w = clamp(e.clientX, 380, window.innerWidth * .6); $("left").style.width = w + "px"; sizeFrame(); renderCanvas();
+            });
+            window.addEventListener("mouseup", () => dragging = false);
+        })();
+        window.addEventListener("resize", () => renderCanvas());
+
+        /* init */
+        loadCaption(EXAMPLES.f1.caption);
+        state.aspect = "2:3"; $("aspectSel").value = "2:3";
+        commit(true);
+        notifyWebUIReady();
+    </script>
+</body>
+
+</html>

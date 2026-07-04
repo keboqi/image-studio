@@ -1,0 +1,230 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Lora:ital,wght@0,400..700;1,400..700&display=swap');
+
+/* Main font declarations */
+.gradio-container {
+    max-width: 1360px !important;
+    margin: auto;
+    font-family: 'Lora', 'Georgia', serif !important;
+    color: #e8dcc4 !important;
+}
+
+/* Titles and Headers */
+h1, h2, h3, h4, h5, h6, .markdown-text h1, .markdown-text h2, .markdown-text h3 {
+    font-family: 'Playfair Display', serif !important;
+    font-weight: 700 !important;
+    color: #e8dcc4 !important;
+    letter-spacing: 0.05em;
+}
+
+/* Page Vignette and atmosphere overlay */
+.gradio-container::before {
+    content: "";
+    position: fixed;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    background: radial-gradient(circle, transparent 60%, rgba(0,0,0,0.85) 100%);
+    pointer-events: none;
+    z-index: 9999;
+}
+
+/* Header style - Victorian Gothic Crimson Moon */
+#header-row {
+    background: linear-gradient(135deg, #050505 0%, #1a0505 50%, #050505 100%) !important;
+    border: 1px solid rgba(139, 0, 0, 0.4) !important;
+    border-radius: 2px !important;
+    padding: 24px 32px;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.8) !important;
+}
+
+#header-row h1 {
+    color: #e8dcc4 !important;
+    font-size: 2.2rem !important;
+    text-shadow: 0 0 10px rgba(139, 0, 0, 0.6);
+    margin-bottom: 8px !important;
+}
+
+#header-row p, #header-row .prose p {
+    color: #a89090 !important;
+    font-size: 0.95rem !important;
+    margin: 4px 0 0 0 !important;
+    font-family: 'Lora', serif !important;
+}
+
+/* VRAM widget styling */
+#header-vram-widget {
+    background: #120909 !important;
+    border: 1px solid rgba(139, 0, 0, 0.3) !important;
+    border-radius: 2px !important;
+    padding: 12px 16px !important;
+}
+
+/* Tab Navigation */
+.tabs > .tab-nav {
+    border-bottom: 2px solid rgba(139, 0, 0, 0.3) !important;
+}
+.tabs > .tab-nav > button {
+    font-family: 'Playfair Display', serif !important;
+    font-weight: 600 !important;
+    font-size: 1.05rem !important;
+    letter-spacing: 0.05em;
+    padding: 10px 24px !important;
+    border-radius: 2px 2px 0 0 !important;
+    background: transparent !important;
+    color: #a89090 !important;
+    border: 1px solid transparent !important;
+    border-bottom: none !important;
+    transition: all 0.3s ease !important;
+}
+.tabs > .tab-nav > button.selected {
+    border: 1px solid rgba(139, 0, 0, 0.4) !important;
+    border-bottom: 2px solid #050505 !important;
+    background: #120909 !important;
+    color: #e8dcc4 !important;
+}
+
+/* Buttons - Sharp, Gothic red */
+#gen-btn, #edit-btn, #upscale-btn, #video-btn, #video-upscale-btn, #chat-send-btn, #ai-remover-btn {
+    background: #8B0000 !important;
+    color: #e8dcc4 !important;
+    font-family: 'Playfair Display', serif !important;
+    font-weight: 600 !important;
+    font-size: 1.1rem !important;
+    letter-spacing: 0.05em;
+    border: 1px solid rgba(139, 0, 0, 0.6) !important;
+    border-radius: 2px !important;
+    padding: 12px 28px !important;
+    transition: all 0.3s ease !important;
+    min-height: 52px !important;
+    box-shadow: none !important;
+    cursor: pointer;
+}
+#gen-btn:hover, #edit-btn:hover, #upscale-btn:hover, #video-btn:hover, #video-upscale-btn:hover, #chat-send-btn:hover, #ai-remover-btn:hover {
+    background: #a30000 !important;
+    border-color: rgba(200, 0, 0, 0.8) !important;
+}
+
+/* Enhance buttons - Deep blue/grey gothic */
+.enhance-btn {
+    background: #1a1a24 !important;
+    color: #e8dcc4 !important;
+    font-family: 'Lora', serif !important;
+    font-weight: 500 !important;
+    font-size: 0.85rem !important;
+    border: 1px solid rgba(139, 0, 0, 0.3) !important;
+    border-radius: 2px !important;
+    padding: 6px 14px !important;
+    transition: all 0.3s ease !important;
+    min-height: 36px !important;
+    box-shadow: none !important;
+}
+.enhance-btn:hover {
+    background: #2a2a3a !important;
+    border-color: rgba(139, 0, 0, 0.6) !important;
+}
+
+/* Send to buttons (subtle utility buttons) */
+.send-btn {
+    font-family: 'Lora', serif !important;
+    font-size: 0.85rem !important;
+    padding: 6px 14px !important;
+    min-height: 36px !important;
+    border: 1px solid rgba(139, 0, 0, 0.3) !important;
+    border-radius: 2px !important;
+    background: rgba(139, 0, 0, 0.08) !important;
+    color: #d0a0a0 !important;
+    transition: all 0.2s ease !important;
+}
+.send-btn:hover {
+    background: rgba(139, 0, 0, 0.2) !important;
+    color: #e8dcc4 !important;
+}
+
+/* Inputs, Textboxes, Sliders, Dropdowns - Sharp, dark red theme */
+input, textarea, select, .svelte-10z8d3a, .svelte-11shv4d {
+    border-radius: 2px !important;
+    border: 1px solid rgba(139, 0, 0, 0.25) !important;
+    background-color: #0a0505 !important;
+    color: #e8dcc4 !important;
+}
+input:focus, textarea:focus, select:focus {
+    border-color: rgba(139, 0, 0, 0.6) !important;
+    box-shadow: none !important;
+}
+
+/* Panels / Blocks */
+.gradio-block, .gr-block, .gr-box, .gr-form {
+    border-radius: 2px !important;
+    border: 1px solid rgba(139, 0, 0, 0.2) !important;
+    background-color: #120909 !important;
+    box-shadow: none !important;
+}
+
+/* Status Markdown */
+#gen-status, #edit-status, #upscale-status, #video-status, #video-upscale-status, #ai-remover-status {
+    border-left: 3px solid #8B0000 !important;
+    padding-left: 12px !important;
+    margin-top: 8px !important;
+    font-size: 0.9rem !important;
+    color: #a89090 !important;
+}
+
+/* Chatbot styling */
+#chat-box {
+    border-radius: 2px !important;
+    border: 1px solid rgba(139, 0, 0, 0.25) !important;
+    background: #080404 !important;
+}
+#chat-box .message-wrap {
+    font-family: 'Lora', serif !important;
+}
+#chat-box .message.user, #chat-box .user-message {
+    background-color: #251212 !important;
+    color: #e8dcc4 !important;
+    border: 1px solid rgba(139, 0, 0, 0.3) !important;
+    border-radius: 2px !important;
+}
+#chat-box .message.bot, #chat-box .bot-message {
+    background-color: #0f0f0f !important;
+    color: #e8dcc4 !important;
+    border: 1px solid rgba(139, 0, 0, 0.15) !important;
+    border-radius: 2px !important;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #050505;
+}
+::-webkit-scrollbar-thumb {
+    background: #3a1010;
+    border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #5c1818;
+}
+
+/* Footer styling */
+#footer {
+    text-align: center;
+    opacity: 0.6;
+    font-size: 0.8rem;
+    margin-top: 24px;
+    padding: 16px 0;
+    border-top: 1px solid rgba(139, 0, 0, 0.2) !important;
+    color: #a89090 !important;
+}
+#footer a {
+    color: #e8dcc4 !important;
+    text-decoration: none;
+}
+#footer a:hover {
+    color: #8B0000 !important;
+    text-decoration: underline;
+}
+
