@@ -164,7 +164,7 @@ uv_install Librosa gradio "diffusers==0.36.0"
 # flash-attn needs setuptools at build time but doesn't declare it; install it
 # before the --no-build-isolation build so the venv already has it available.
 uv_install setuptools
-uv_install flash-attn --no-build-isolation --no-cache-dir
+uv_install flash-attn --no-build-isolation
 uv_install sageattention --no-build-isolation
 uv_install "https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu12.8torch2.8-cp312-cp312-linux_x86_64.whl"
 python -c "import nunchaku; print('nunchaku import ok:', getattr(nunchaku, '__version__', 'unknown'))"
