@@ -89,6 +89,10 @@ Additional model paths, repository IDs, timeouts, and service settings are defin
 
 Every main workflow is available through named Gradio endpoints, including image generation, editing, image/video upscaling, video generation, and watermark removal. Full request examples are in [`image_studio/docs/api.md`](image_studio/docs/api.md).
 
+`GET /api/models` exposes the registered image models, stable IDs, supported operations, backend IDs,
+and typed parameter schemas. See [`image_studio/docs/architecture.md`](image_studio/docs/architecture.md)
+for the model and backend extension contracts.
+
 The managed DiffusionGemma backend can also be exposed as an OpenAI-compatible API:
 
 ```bash
@@ -120,7 +124,7 @@ Install the lightweight development tools and run the compatibility checks:
 python -m pip install -r requirements-dev.txt
 python image_studio_webui.py --selftest
 ruff check image_studio tests
-mypy image_studio
+mypy image_studio/core image_studio/integrations
 ```
 
 The test suite avoids loading GPU models. Optional end-to-end GPU checks are marked with `gpu` and can be selected explicitly with pytest.
@@ -129,7 +133,9 @@ The test suite avoids loading GPU models. Optional end-to-end GPU checks are mar
 
 ```text
 image_studio/
+  core/         Typed model registry, backend lifecycle, and execution service
   generators/   Generator adapters and dispatch
+  integrations/ Built-in model parameter contracts and registrations
   infra/        Lazy imports, bootstrap, and managed model processes
   pipelines/    Model-specific pipeline integrations
   services/     Companion-service clients and lifecycle management

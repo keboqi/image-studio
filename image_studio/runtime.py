@@ -30,6 +30,9 @@ from datetime import datetime
 from typing import Any, Callable, Optional
 
 from image_studio.config import AppConfig
+from image_studio.core.backends import BackendRegistry, CallableBackend
+from image_studio.core.executor import ModelExecutor
+from image_studio.core.models import Operation
 from image_studio.errors import AppError, BackendUnavailableError, ModelLoadError, UserInputError
 from image_studio.infra.bootstrap import GitBootstrap, RepoSpec
 from image_studio.infra.model_manager import ManagedModelSpec, ModelManager
@@ -53,6 +56,7 @@ from image_studio.runtime_binding import export_module, rebind_modules
 from image_studio.ui.theme import build_theme, load_css
 from image_studio.logging_setup import configure_logging
 from image_studio.context import AppContext
+from image_studio.integrations.image_models import ImageModelFunctions, build_image_model_registry
 
 _RUNTIME_MODULES = []
 
@@ -1643,6 +1647,43 @@ _RUNTIME_MODULES.append(_runtime_generators_dispatch)
 
 
 
+IMAGE_BACKEND_REGISTRY = BackendRegistry()
+IMAGE_BACKEND_REGISTRY.register(
+    CallableBackend(
+        id="local-gpu",
+        label="In-process GPU runtime",
+        max_concurrency=1,
+    )
+)
+IMAGE_BACKEND_REGISTRY.register(
+    CallableBackend(
+        id="krea2-comfy",
+        label="Krea2 ComfyUI",
+        start_fn=_krea2_comfy_service.ensure_running,
+        stop_fn=_krea2_comfy_service.stop,
+        health_fn=_krea2_comfy_service.is_healthy,
+        max_concurrency=1,
+    )
+)
+IMAGE_MODEL_REGISTRY = build_image_model_registry(
+    ImageModelFunctions(
+        qwen_generate=run_generate,
+        qwen_edit=run_edit,
+        zimage_generate=run_zimage,
+        zimage_full_generate=run_zimage_full,
+        hidream_generate=run_hidream_generate,
+        hidream_edit=run_hidream_edit,
+        boogu_generate=run_boogu_generate,
+        boogu_edit=run_boogu_edit,
+        krea2_generate=run_krea2_generate,
+        ideogram_generate=run_ideogram4_generate,
+        hidream_model_keys=HIDREAM_MODE_KEYS,
+    )
+)
+IMAGE_MODEL_EXECUTOR = ModelExecutor(IMAGE_MODEL_REGISTRY, IMAGE_BACKEND_REGISTRY)
+
+
+# Deprecated compatibility registries. New dispatch goes through IMAGE_MODEL_EXECUTOR.
 GENERATION_HANDLERS: dict[str, Callable[[GenerationRequest, Any], Any]] = {
     "Qwen Image": _run_qwen_generation,
     "Z-Image": _run_zimage_generation,
@@ -1654,7 +1695,10 @@ GENERATION_HANDLERS: dict[str, Callable[[GenerationRequest, Any], Any]] = {
 GENERATION_REGISTRY = RequestHandlerRegistry[GenerationRequest](_run_qwen_generation)
 for _mode, _handler in GENERATION_HANDLERS.items():
     GENERATION_REGISTRY.register(_mode, _handler)
-GENERATOR_MODES = list(GENERATION_REGISTRY.modes())
+GENERATOR_MODES = [
+    adapter.spec.display_name
+    for adapter in IMAGE_MODEL_REGISTRY.for_operation(Operation.IMAGE_GENERATE)
+]
 
 
 
@@ -1673,7 +1717,10 @@ EDIT_HANDLERS: dict[str, Callable[[EditRequest, Any], Any]] = {
 EDIT_REGISTRY = RequestHandlerRegistry[EditRequest](_run_qwen_edit_request)
 for _mode, _handler in EDIT_HANDLERS.items():
     EDIT_REGISTRY.register(_mode, _handler)
-EDITOR_MODES = list(EDIT_REGISTRY.modes())
+EDITOR_MODES = [
+    adapter.spec.display_name
+    for adapter in IMAGE_MODEL_REGISTRY.for_operation(Operation.IMAGE_EDIT)
+]
 
 
 
@@ -1968,6 +2015,7 @@ def main(argv: list[str] | None = None):
         app,
         vllm_proxy=args.vllm_proxy,
         api_key=args.vllm_proxy_api_key,
+        model_catalog_provider=IMAGE_MODEL_EXECUTOR.catalog,
     )
     if args.vllm_proxy and fastapi_app is not None:
         launch_kwargs["_app"] = fastapi_app
@@ -1981,6 +2029,7 @@ def main(argv: list[str] | None = None):
         app,
         vllm_proxy=args.vllm_proxy,
         api_key=args.vllm_proxy_api_key,
+        model_catalog_provider=IMAGE_MODEL_EXECUTOR.catalog,
     )
     block_thread = getattr(app, "block_thread", None)
     if callable(block_thread):
