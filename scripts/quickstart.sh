@@ -159,6 +159,13 @@ fi
 # ---------------------------------------------------------------------------
 # Main environment Python dependencies
 # ---------------------------------------------------------------------------
+# Pin torch to cu128 to match the system NCCL and the nunchaku wheel.
+# Without this, uv resolves to torch+cu130 which has NCCL symbols missing
+# on this system (ncclCommResume).
+log "Installing the CUDA 12.8 PyTorch stack"
+uv_install torch torchvision torchaudio \
+  --index-url https://download.pytorch.org/whl/cu128
+
 log "Installing core Python dependencies"
 uv_install Librosa gradio "diffusers==0.36.0"
 # PyTorch's built-in SDPA provides flash attention; the standalone flash-attn
