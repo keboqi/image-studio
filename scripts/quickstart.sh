@@ -110,7 +110,7 @@ export VLLM_PORT="${VLLM_PORT:-8001}"
 export SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-diffusiongemma}"
 export PI_MODEL="${PI_MODEL:-${SERVED_MODEL_NAME}}"
 export MAX_MODEL_LEN="${MAX_MODEL_LEN:-65536}"
-export PI_CONFIG_DIR="${PI_CONFIG_DIR:-.pi/agent}"
+export PI_CONFIG_DIR="${PI_CONFIG_DIR:-../.pi/agent}"
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 if [[ "${IMAGE_STUDIO_SKIP_PI_SETUP:-0}" != "1" ]]; then
   if [[ -s "$NVM_DIR/nvm.sh" ]]; then

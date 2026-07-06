@@ -245,13 +245,9 @@ def pi_respond(user_msg: str, history: list):
             if pi_model:
                 command.extend(["--model", pi_model])
             command.extend(["-p", prompt])
-            env = dict(os.environ)
-            if "PI_CONFIG_DIR" not in env:
-                env["PI_CONFIG_DIR"] = str(BASE_DIR / ".pi" / "agent")
             completed = subprocess.run(
                 command,
                 cwd=BASE_DIR,
-                env=env,
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
