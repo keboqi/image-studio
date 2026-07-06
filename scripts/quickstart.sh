@@ -67,6 +67,13 @@ activate_venv() {
   VIRTUAL_ENV="$(cd -- "${VENV_DIR}" && pwd)"
   export VIRTUAL_ENV
   export PATH="${VIRTUAL_ENV}/bin:${PATH}"
+  # Prioritize the venv's bundled libraries (esp. NCCL) over system copies.
+  # Without this, a stale system libnccl.so causes ncclCommResume errors.
+  local torch_lib
+  torch_lib="$(python -c 'import pathlib,sysconfig; print(pathlib.Path(sysconfig.get_path("purelib"))/"torch"/"lib")' 2>/dev/null || true)"
+  if [[ -d "${torch_lib}" ]]; then
+    export LD_LIBRARY_PATH="${torch_lib}:${LD_LIBRARY_PATH:-}"
+  fi
 }
 
 uv_install() {
@@ -159,12 +166,13 @@ fi
 # ---------------------------------------------------------------------------
 # Main environment Python dependencies
 # ---------------------------------------------------------------------------
-# Pin torch to cu128 to match the system NCCL and the nunchaku wheel.
-# Without this, uv resolves to torch+cu130 which has NCCL symbols missing
-# on this system (ncclCommResume).
+# Pin torch to 2.8.x+cu128 to match the nunchaku wheel (cu12.8torch2.8).
 log "Installing the CUDA 12.8 PyTorch stack"
-uv_install torch torchvision torchaudio \
+uv_install "torch>=2.8,<2.9" "torchvision>=0.23,<0.24" "torchaudio>=2.8,<2.9" \
   --index-url https://download.pytorch.org/whl/cu128
+# Refresh LD_LIBRARY_PATH now that torch is installed so its bundled NCCL
+# is found before any stale system libnccl.so.
+activate_venv
 
 log "Installing core Python dependencies"
 uv_install Librosa gradio "diffusers==0.36.0"
