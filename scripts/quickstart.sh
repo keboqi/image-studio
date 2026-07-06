@@ -161,9 +161,9 @@ fi
 # ---------------------------------------------------------------------------
 log "Installing core Python dependencies"
 uv_install Librosa gradio "diffusers==0.36.0"
-# flash-attn needs setuptools at build time but doesn't declare it; install it
-# before the --no-build-isolation build so the venv already has it available.
-uv_install setuptools
+# flash-attn needs setuptools/psutil/ninja/wheel at build time but doesn't
+# declare them; pre-install so --no-build-isolation finds them in the venv.
+uv_install setuptools psutil ninja wheel
 uv_install flash-attn --no-build-isolation
 uv_install sageattention --no-build-isolation
 uv_install "https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu12.8torch2.8-cp312-cp312-linux_x86_64.whl"
