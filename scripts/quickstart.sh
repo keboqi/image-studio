@@ -159,19 +159,12 @@ fi
 # ---------------------------------------------------------------------------
 # Main environment Python dependencies
 # ---------------------------------------------------------------------------
-# Pin torch to match the nunchaku wheel (cu12.8 + torch 2.8). Without this,
-# uv resolves to the latest torch which lacks prebuilt flash-attn wheels.
-log "Installing the CUDA 12.8 PyTorch stack"
-uv_install torch torchvision torchaudio \
-  --index-url https://download.pytorch.org/whl/cu128
-
 log "Installing core Python dependencies"
 uv_install Librosa gradio "diffusers==0.36.0"
-# flash-attn ships prebuilt wheels for torch 2.8 + cu128.
-if ! python -c 'import flash_attn' >/dev/null 2>&1; then
-  uv_install setuptools psutil ninja wheel
-  uv_install flash-attn --no-build-isolation
-fi
+# PyTorch's built-in SDPA provides flash attention; the standalone flash-attn
+# package requires a matching system-CUDA ↔ torch-CUDA pair which is fragile
+# across different cloud environments. Skip it here; Boogu-Image handles its
+# own flash-attn setup via boogu_image/utils/get_flash_attn.py.
 uv_install sageattention --no-build-isolation
 uv_install "https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu12.8torch2.8-cp312-cp312-linux_x86_64.whl"
 python -c "import nunchaku; print('nunchaku import ok:', getattr(nunchaku, '__version__', 'unknown'))"
