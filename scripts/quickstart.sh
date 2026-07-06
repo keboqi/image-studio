@@ -159,14 +159,18 @@ fi
 # ---------------------------------------------------------------------------
 # Main environment Python dependencies
 # ---------------------------------------------------------------------------
+# Pin torch to match the nunchaku wheel (cu12.8 + torch 2.8). Without this,
+# uv resolves to the latest torch which lacks prebuilt flash-attn wheels.
+log "Installing the CUDA 12.8 PyTorch stack"
+uv_install torch torchvision torchaudio \
+  --index-url https://download.pytorch.org/whl/cu128
+
 log "Installing core Python dependencies"
 uv_install Librosa gradio "diffusers==0.36.0"
-# flash-attn: skip if already importable (the source build is very expensive).
-# Undeclared build deps (setuptools, psutil, ninja, wheel) must be in the venv
-# before --no-build-isolation. MAX_JOBS limits ninja parallelism to avoid OOM.
+# flash-attn ships prebuilt wheels for torch 2.8 + cu128.
 if ! python -c 'import flash_attn' >/dev/null 2>&1; then
   uv_install setuptools psutil ninja wheel
-  MAX_JOBS="${MAX_JOBS:-4}" uv_install flash-attn --no-build-isolation
+  uv_install flash-attn --no-build-isolation
 fi
 uv_install sageattention --no-build-isolation
 uv_install "https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu12.8torch2.8-cp312-cp312-linux_x86_64.whl"
