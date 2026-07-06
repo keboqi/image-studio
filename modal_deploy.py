@@ -701,9 +701,10 @@ image = (
     # volume preserves the installed venv across container restarts.
     .add_local_file("deploy_krea2_comfy.sh", remote_path=KREA2_COMFY_SCRIPT, copy=True)
     .run_commands(f"chmod +x {KREA2_COMFY_SCRIPT}")
-    # These go last without copy so they are mounted at startup for fast iteration.
+    # Application sources go last without copy so they are mounted at startup for
+    # fast iteration.  The package is the deployment unit; the legacy
+    # image_studio_webui.py compatibility launcher is intentionally not needed.
     .add_local_dir("image_studio", remote_path="/root/image_studio")
-    .add_local_file("image_studio_webui.py", remote_path="/root/image_studio_webui.py")
     .add_local_file("jsondesigner.html", remote_path="/root/jsondesigner.html")
 )
 
@@ -1072,12 +1073,13 @@ def _hf_download_local(repo_id: str, local_dir: str, *args: str):
     _hf_download(repo_id, *args, "--local-dir", local_dir)
 
 
-def _import_webui_module():
+def _import_image_studio_app():
+    """Import the modular application entry point from the mounted package."""
     if "/root" not in sys.path:
         sys.path.append("/root")
-    import image_studio_webui
+    from image_studio import app as image_studio_app
 
-    return image_studio_webui
+    return image_studio_app
 
 
 def _download_pid_models():
@@ -1278,17 +1280,13 @@ def _modal_runtime_env_defaults() -> dict[str, str]:
 
 
 def _configure_modal_runtime_env():
-    """Set all environment variables the webui module needs to find backends."""
+    """Set all environment variables the application needs to find backends."""
     _apply_env_defaults(_modal_runtime_env_defaults())
 
 
-def _patch_modal_vllm_service(webui):
-    """Wrap the webui's vLLM service so ensure_running/stop commit Modal volumes."""
-    if getattr(webui, "_modal_diffusiongemma_vllm_patch", False):
-        return
-
-    service = getattr(webui, "_diffusiongemma_vllm_service", None)
-    if service is None:
+def _patch_modal_service(service, marker: str):
+    """Commit Modal volumes after a managed service starts or stops."""
+    if service is None or getattr(service, marker, False):
         return
 
     original_ensure_running = service.ensure_running
@@ -1310,60 +1308,29 @@ def _patch_modal_vllm_service(webui):
 
     service.ensure_running = ensure_running_with_persistent_cache
     service.stop = stop_with_persistent_cache
-    webui._modal_diffusiongemma_vllm_patch = True
+    setattr(service, marker, True)
 
 
-def _patch_modal_krea2_service(webui):
-    """Wrap the webui's Krea2 ComfyUI service so ensure_running/stop commit Modal volumes."""
-    if getattr(webui, "_modal_krea2_comfy_patch", False):
-        return
-
-    service = getattr(webui, "_krea2_comfy_service", None)
-    if service is None:
-        return
-
-    original_ensure_running = service.ensure_running
-    original_stop = service.stop
-
-    def ensure_running_with_persistent_cache():
-        try:
-            original_ensure_running()
-        finally:
-            cache_storage.commit()
-            app_storage.commit()
-
-    def stop_with_persistent_cache():
-        try:
-            original_stop()
-        finally:
-            cache_storage.commit()
-            app_storage.commit()
-
-    service.ensure_running = ensure_running_with_persistent_cache
-    service.stop = stop_with_persistent_cache
-    webui._modal_krea2_comfy_patch = True
+def _patch_modal_services(application):
+    """Apply Modal persistence hooks to services owned by AppContext."""
+    context = application.APP_CONTEXT
+    _patch_modal_service(context.diffusiongemma, "_modal_diffusiongemma_vllm_patch")
+    _patch_modal_service(context.krea2, "_modal_krea2_comfy_patch")
 
 
-def _load_webui_module():
-    """Configure env, set up persistent cache, import webui, and patch vLLM service.
-
-    Returns the imported image_studio_webui module.
-    """
+def _load_image_studio_app():
+    """Configure storage and import the modular Image Studio application."""
     _configure_modal_runtime_env()
     setup_persistent_cache()
     app_storage.commit()
-    webui = _import_webui_module()
-    _patch_modal_vllm_service(webui)
-    _patch_modal_krea2_service(webui)
-    return webui
+    application = _import_image_studio_app()
+    _patch_modal_services(application)
+    return application
 
 
-def _register_vllm_as_loaded(webui):
-    """Tell the webui model manager that vLLM is already running."""
-    service = getattr(webui, "_diffusiongemma_vllm_service", None)
-    if service is None:
-        print("WARNING: webui._diffusiongemma_vllm_service not found; cannot register vLLM as loaded.")
-        return
+def _register_vllm_as_loaded(application):
+    """Tell the application model manager that vLLM is already running."""
+    service = application.APP_CONTEXT.diffusiongemma
     if service.is_healthy():
         service._register()
         print("DiffusionGemma vLLM registered as loaded in model manager.")
@@ -1371,39 +1338,52 @@ def _register_vllm_as_loaded(webui):
         print("WARNING: vLLM health check failed; model not registered as loaded.")
 
 
-def _prefer_local_gemma_upsampler(webui):
+def _prefer_local_gemma_upsampler():
     """Default Ideogram prompt upsampling to local Gemma without hiding the API option."""
-    local_gemma = getattr(webui, "IDEOGRAM4_UPSAMPLE_GEMMA", None)
+    from image_studio.pipelines.ideogram import prompting
+    from image_studio.ui.components import generate
+
+    local_gemma = getattr(prompting, "IDEOGRAM4_UPSAMPLE_GEMMA", None)
     if not local_gemma:
-        print("WARNING: webui.IDEOGRAM4_UPSAMPLE_GEMMA not found; cannot set fast upsampler default.")
+        print("WARNING: Ideogram local Gemma option not found; cannot set fast upsampler default.")
         return
 
-    webui._ideogram4_default_upsampler = lambda: local_gemma
+    def local_gemma_default():
+        return local_gemma
+
+    # The refactored UI component holds the callable exported by the prompting
+    # module, so update both owners rather than patching the old monolith.
+    prompting._ideogram4_default_upsampler = local_gemma_default
+    generate._ideogram4_default_upsampler = local_gemma_default
+    # Keep compatibility for callers resolving the helper through app.__getattr__.
+    runtime = sys.modules.get("image_studio.runtime")
+    if runtime is not None:
+        runtime._ideogram4_default_upsampler = local_gemma_default
     print("Fast WebUI Ideogram prompt upsampler default set to local Gemma.")
 
 
-def _build_modal_fastapi_app(webui):
+def _build_modal_fastapi_app(application):
     """Build the Gradio demo and mount it on a FastAPI app."""
     import gradio as gr
     from fastapi import FastAPI
 
-    demo = webui.build_ui()
-    demo.queue()
+    demo = application.build_ui(application.APP_CONTEXT)
+    demo.queue(max_size=4, default_concurrency_limit=1)
     fastapi_app = FastAPI()
-    attach_proxy = getattr(webui, "attach_vllm_proxy_routes", None)
-    attach_designer = getattr(webui, "attach_ideogram_json_designer_route", None)
     proxy_api_key = os.environ.get("IMAGE_STUDIO_VLLM_PROXY_API_KEY", "").strip()
-    if callable(attach_proxy):
-        # Modal mounts Gradio at "/" below, so parent-level routes must be
-        # registered first or the Gradio mount can consume /v1/* requests.
-        attach_proxy(type("ModalRouteHost", (), {"app": fastapi_app})(), api_key=proxy_api_key)
-    if callable(attach_designer):
-        attach_designer(type("ModalRouteHost", (), {"app": fastapi_app})())
+    route_options = {
+        "vllm_proxy": True,
+        "api_key": proxy_api_key,
+        "model_catalog_provider": application.IMAGE_MODEL_EXECUTOR.catalog,
+    }
+    # Modal mounts Gradio at "/", so application routes must be registered on
+    # the parent first or the Gradio mount can consume them.
+    route_host = type("ModalRouteHost", (), {"app": fastapi_app})()
+    application.attach_app_routes(route_host, **route_options)
     mounted_app = gr.mount_gradio_app(fastapi_app, demo, path="/")
-    if callable(attach_proxy):
-        attach_proxy(demo, api_key=proxy_api_key)
-    if callable(attach_designer):
-        attach_designer(demo)
+    # Also attach to Gradio's own app. The modular route helper is idempotent
+    # and promotes named routes ahead of Gradio's broad fallback route.
+    application.attach_app_routes(demo, **route_options)
     return mounted_app
 
 
@@ -1428,8 +1408,8 @@ class ImageStudioWebUI:
     @modal.asgi_app(label="web-ui")
     def web_ui(self):
         if not hasattr(self, "fastapi_app"):
-            webui = _load_webui_module()
-            self.fastapi_app = _build_modal_fastapi_app(webui)
+            application = _load_image_studio_app()
+            self.fastapi_app = _build_modal_fastapi_app(application)
         return self.fastapi_app
 
 
@@ -1493,13 +1473,13 @@ class ImageStudioWebUIFast:
     @modal.asgi_app(label="snapshot-web-ui")
     def serve(self):
         if not hasattr(self, "fastapi_app"):
-            # Set the default chat model to DiffusionGemma vLLM before the webui
-            # module is imported (it reads this env var at module level).
+            # Set the default chat model before the application package is
+            # imported (configuration is read once during runtime startup).
             os.environ["IMAGE_STUDIO_CHAT_DEFAULT"] = "diffusiongemma_vllm"
-            webui = _load_webui_module()
-            _register_vllm_as_loaded(webui)
-            _prefer_local_gemma_upsampler(webui)
-            self.fastapi_app = _build_modal_fastapi_app(webui)
+            application = _load_image_studio_app()
+            _register_vllm_as_loaded(application)
+            _prefer_local_gemma_upsampler()
+            self.fastapi_app = _build_modal_fastapi_app(application)
         return self.fastapi_app
 
     @modal.exit()
