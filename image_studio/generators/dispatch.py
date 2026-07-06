@@ -1,6 +1,9 @@
 """Extracted runtime implementation."""
 
 from __future__ import annotations
+from dataclasses import asdict
+
+from image_studio.core.models import Operation
 from image_studio.progress import NO_PROGRESS
 
 # --- extracted runtime implementation ---
@@ -80,7 +83,79 @@ def _run_qwen_generation(req: GenerationRequest, progress=NO_PROGRESS):
     )
 
 def _run_generation_request(req: GenerationRequest, progress=NO_PROGRESS):
-    return GENERATION_REGISTRY.dispatch(req.mode, req, progress=progress)
+    values = asdict(req)
+    common = {
+        "prompt": req.prompt,
+        "width": req.width,
+        "height": req.height,
+        "seed": req.seed,
+        "pid_enabled": req.full_pid_enabled,
+        "pid_ckpt": req.full_pid_ckpt,
+        "pid_steps": req.full_pid_steps,
+        "pid_cfg": req.full_pid_cfg,
+    }
+    model_parameters = {
+        "Qwen Image": {
+            **common,
+            "neg_prompt": req.neg_prompt,
+            "cfg": req.cfg,
+        },
+        "Z-Image": {
+            **common,
+            "neg_prompt": req.neg_prompt,
+            "version": req.zimage_version,
+            "steps": req.steps,
+            "guidance": req.guidance,
+            "full_steps": req.full_steps,
+            "full_guidance": req.full_guidance,
+        },
+        HIDREAM_O1_MODE: {
+            "prompt": req.prompt,
+            "width": req.width,
+            "height": req.height,
+            "version": req.hidream_version,
+            "seed": req.seed,
+        },
+        BOOGU_IMAGE_MODE: {
+            "prompt": req.prompt,
+            "neg_prompt": req.neg_prompt,
+            "width": req.width,
+            "height": req.height,
+            "version": req.boogu_version,
+            "steps": req.boogu_steps,
+            "base_guidance": req.boogu_base_guidance,
+            "seed": req.seed,
+        },
+        KREA2_MODE: {
+            **common,
+            "steps": req.krea2_steps,
+            "cfg": req.krea2_cfg,
+        },
+        IDEOGRAM4_MODE: {
+            **common,
+            "pipeline": req.ideogram_pipeline,
+            "sampler": req.ideogram_sampler,
+            "upsampler": req.ideogram_upsampler,
+            "strip_prompt": req.ideogram_strip_prompt,
+            "reuse_cache": req.ideogram_reuse_cache,
+            "gemma_tokens": req.ideogram_gemma_tokens,
+            "gemma_thinking": req.ideogram_gemma_thinking,
+            "cfg_one_final_steps": req.ideogram_cfg_one_final_steps,
+            "lora_mode": req.ideogram_lora_mode,
+            "lora_weight": req.ideogram_lora_weight,
+            "lora_cond_strength": req.ideogram_lora_cond_strength,
+            "lora_uncond_strength": req.ideogram_lora_uncond_strength,
+            "api_key": req.ideogram_api_key,
+        },
+    }
+    parameters = model_parameters.get(req.mode, values)
+    return IMAGE_MODEL_EXECUTOR.execute(
+        req.mode,
+        Operation.IMAGE_GENERATE,
+        parameters,
+        progress,
+        strict=req.mode in model_parameters,
+    )
 
 def _run_hidream_edit_request(req: EditRequest, progress=NO_PROGRESS):
     model_key = HIDREAM_MODE_KEYS.get(req.hidream_version, MODEL_HIDREAM_O1_DEV)
@@ -106,7 +181,48 @@ def _run_qwen_edit_request(req: EditRequest, progress=NO_PROGRESS):
     )
 
 def _run_edit_request(req: EditRequest, progress=NO_PROGRESS):
-    return EDIT_REGISTRY.dispatch(req.model_name, req, progress=progress)
+    common = {
+        "img1": req.img1,
+        "img2": req.img2,
+        "img3": req.img3,
+        "prompt": req.prompt,
+    }
+    model_parameters = {
+        "Qwen Image Edit": {
+            **common,
+            "neg_prompt": req.neg_prompt,
+            "cfg": req.cfg,
+            "seed": req.qwen_seed,
+        },
+        HIDREAM_O1_MODE: {
+            **common,
+            "width": req.width,
+            "height": req.height,
+            "keep_original_aspect": req.keep_original_aspect,
+            "version": req.hidream_version,
+            "seed": req.hidream_seed,
+        },
+        BOOGU_IMAGE_MODE: {
+            **common,
+            "neg_prompt": req.neg_prompt,
+            "version": req.boogu_version,
+            "width": req.width,
+            "height": req.height,
+            "keep_original_aspect": req.keep_original_aspect,
+            "steps": req.boogu_steps,
+            "text_guidance": req.boogu_text_guidance,
+            "image_guidance": req.boogu_image_guidance,
+            "seed": req.boogu_seed,
+        },
+    }
+    parameters = model_parameters.get(req.model_name, asdict(req))
+    return IMAGE_MODEL_EXECUTOR.execute(
+        req.model_name,
+        Operation.IMAGE_EDIT,
+        parameters,
+        progress,
+        strict=req.model_name in model_parameters,
+    )
 
 def _dispatch_generate(
     mode, prompt, neg_prompt, width, height,

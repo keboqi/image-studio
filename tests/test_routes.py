@@ -2,7 +2,12 @@ import ast
 from pathlib import Path
 from types import SimpleNamespace
 
-from image_studio.web.routes import PUBLIC_API_ENDPOINTS, promote_routes_before_fallback
+from image_studio.web.routes import (
+    MODEL_CATALOG_ROUTE_NAME,
+    PUBLIC_API_ENDPOINTS,
+    attach_model_catalog_route,
+    promote_routes_before_fallback,
+)
 
 
 def test_public_api_contract_is_stable():
@@ -51,3 +56,26 @@ def test_named_routes_are_promoted_before_fallback():
     app = SimpleNamespace(router=SimpleNamespace(routes=routes))
     promote_routes_before_fallback(app, {"proxy"})
     assert [item.name for item in routes] == ["root", "proxy", "fallback"]
+
+
+def test_model_catalog_route_is_attached_once():
+    routes = []
+
+    class App:
+        router = SimpleNamespace(routes=routes)
+
+        def add_api_route(self, path, endpoint, *, methods, name, include_in_schema):
+            routes.append(
+                SimpleNamespace(
+                    path=path,
+                    endpoint=endpoint,
+                    methods=methods,
+                    name=name,
+                    include_in_schema=include_in_schema,
+                )
+            )
+
+    gradio = SimpleNamespace(app=App())
+    assert attach_model_catalog_route(gradio, lambda: {"models": []}) is True
+    assert attach_model_catalog_route(gradio, lambda: {"models": []}) is True
+    assert [route.name for route in routes] == [MODEL_CATALOG_ROUTE_NAME]

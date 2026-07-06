@@ -90,3 +90,38 @@ def test_application_imports_and_exports_extracted_runtime(monkeypatch):
     assert app.GenerationRequest.field_names()[0] == "mode"
     assert len(app._RUNTIME_MODULES) >= 30
     assert app.build_ui() is not None
+
+    values = dict.fromkeys(app.GenerationRequest.field_names(), 0)
+    values.update(
+        mode="Qwen Image",
+        prompt="a cat",
+        neg_prompt="blur",
+        width=768,
+        height=512,
+        cfg=1.5,
+        full_pid_enabled=False,
+        full_pid_ckpt="auto",
+        full_pid_steps=4,
+        full_pid_cfg=1.0,
+        seed=42,
+    )
+    captured = {}
+
+    def execute(model_id, operation, parameters, progress, **kwargs):
+        captured.update(
+            model_id=model_id,
+            operation=operation.value,
+            parameters=parameters,
+            progress=progress,
+            kwargs=kwargs,
+        )
+        return "routed"
+
+    monkeypatch.setattr(app.IMAGE_MODEL_EXECUTOR, "execute", execute)
+    request = app.GenerationRequest.from_mapping(values)
+    assert app._run_generation_request(request, progress="p") == "routed"
+    assert captured["model_id"] == "Qwen Image"
+    assert captured["operation"] == "image.generate"
+    assert captured["parameters"]["prompt"] == "a cat"
+    assert captured["parameters"]["pid_steps"] == 4
+    assert captured["progress"] == "p"

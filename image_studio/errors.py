@@ -13,6 +13,14 @@ class BackendUnavailableError(AppError):
     """A required local or remote backend cannot currently be used."""
 
 
+class BackendBusyError(AppError):
+    """A backend cannot be changed while requests are active."""
+
+
+class ModelNotFoundError(UserInputError):
+    """A requested model ID or compatibility alias is not registered."""
+
+
 class ModelLoadError(AppError):
     """A model or one of its assets could not be loaded."""
 

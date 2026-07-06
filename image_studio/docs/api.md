@@ -3,6 +3,13 @@
 
 This WebUI exposes standard Gradio API endpoints that can be accessed from any 3rd party application using the official `gradio_client` library or via raw HTTP requests.
 
+### Model discovery
+
+`GET /api/models` returns the model catalog used by the image execution framework. Each entry includes
+a stable model ID, supported operations, backend ID, and typed parameter schemas. Clients should use
+stable IDs for new integrations; the Gradio endpoints below retain their historical display-name and
+positional contracts for compatibility.
+
 Image endpoints return a WebP preview path for display and a raw PNG path for download or follow-up processing.
 
 ### 1. Generating Images
