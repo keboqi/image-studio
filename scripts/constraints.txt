@@ -3,3 +3,9 @@
 numpy<2.0
 opencv-python<4.12
 opencv-python-headless<4.12
+# Pin torch to 2.8.x (matching the nunchaku cu12.8+torch2.8 wheel). Without
+# this constraint, subsequent uv_install -U calls pull torch from PyPI and
+# upgrade it past the cu128 version, breaking NCCL.
+torch<2.9
+torchvision<0.24
+torchaudio<2.9
