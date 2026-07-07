@@ -88,7 +88,7 @@ sleep_server() {
   wait_ready
   echo "Putting DiffusionGemma vLLM to sleep (level=${SLEEP_LEVEL}) to release VRAM."
   post_control "/sleep?level=${SLEEP_LEVEL}"
-  echo "DiffusionGemma vLLM is sleeping."
+  wait_sleeping
 }
 
 wake_server() {
@@ -96,13 +96,11 @@ wake_server() {
     echo "${CONTAINER_NAME} is not running; start it first."
     return 1
   fi
-  wait_ready
   if is_sleeping; then
     echo "Waking DiffusionGemma vLLM."
     post_control "/wake_up"
   fi
-  wait_ready
-  echo "DiffusionGemma vLLM is awake."
+  wait_awake
 }
 
 show_recent_logs() {
@@ -128,6 +126,52 @@ wait_ready() {
     sleep 2
   done
   echo "Timed out waiting for DiffusionGemma vLLM at ${API_BASE}. Recent logs:" >&2
+  show_recent_logs
+  return 1
+}
+
+wait_sleeping() {
+  local started_at deadline elapsed
+  started_at="${SECONDS}"
+  deadline=$((SECONDS + READY_TIMEOUT))
+  echo "Waiting up to ${READY_TIMEOUT}s for DiffusionGemma vLLM to sleep..."
+  while (( SECONDS < deadline )); do
+    if is_sleeping; then
+      elapsed=$((SECONDS - started_at))
+      echo "DiffusionGemma vLLM is sleeping after ${elapsed}s."
+      return 0
+    fi
+    if container_exists && ! container_running; then
+      echo "DiffusionGemma vLLM container exited while waiting for sleep. Recent logs:" >&2
+      show_recent_logs
+      return 1
+    fi
+    sleep 2
+  done
+  echo "Timed out waiting for DiffusionGemma vLLM to sleep. Recent logs:" >&2
+  show_recent_logs
+  return 1
+}
+
+wait_awake() {
+  local started_at deadline elapsed
+  started_at="${SECONDS}"
+  deadline=$((SECONDS + READY_TIMEOUT))
+  echo "Waiting up to ${READY_TIMEOUT}s for DiffusionGemma vLLM to wake..."
+  while (( SECONDS < deadline )); do
+    if is_healthy && ! is_sleeping; then
+      elapsed=$((SECONDS - started_at))
+      echo "DiffusionGemma vLLM is awake after ${elapsed}s."
+      return 0
+    fi
+    if container_exists && ! container_running; then
+      echo "DiffusionGemma vLLM container exited while waiting to wake. Recent logs:" >&2
+      show_recent_logs
+      return 1
+    fi
+    sleep 2
+  done
+  echo "Timed out waiting for DiffusionGemma vLLM to wake. Recent logs:" >&2
   show_recent_logs
   return 1
 }
@@ -372,7 +416,7 @@ start_container() {
     "${IMAGE}" \
       "${vllm_args[@]}"
 
-  wait_ready
+  wait_awake
   warmup_api
   print_urls
   echo
@@ -397,6 +441,10 @@ show_status() {
     else
       echo "Sleep:  awake"
     fi
+  elif is_sleeping; then
+    echo
+    echo "Health: not ready"
+    echo "Sleep:  sleeping"
   else
     echo
     echo "Health: not ready"
@@ -406,7 +454,7 @@ show_status() {
 
 test_api() {
   echo "Testing OpenAI-compatible chat endpoint..."
-  wait_ready
+  wake_server
   curl -sS --max-time "${REQUEST_TIMEOUT}" "${API_BASE}/chat/completions" \
     -H "Content-Type: application/json" \
     -d "{

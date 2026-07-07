@@ -214,6 +214,44 @@ wait_ready() {
   return 1
 }
 
+wait_sleeping() {
+  local deadline=$((SECONDS + READY_TIMEOUT))
+  while (( SECONDS < deadline )); do
+    if is_sleeping; then
+      echo "DiffusionGemma vLLM is sleeping."
+      return 0
+    fi
+    if [[ -f "${PID_FILE}" ]] && ! is_process_running; then
+      echo "DiffusionGemma vLLM process exited while waiting for sleep. Last logs:" >&2
+      print_failure_logs
+      return 1
+    fi
+    sleep 2
+  done
+  echo "Timed out waiting for DiffusionGemma vLLM to sleep. Last logs:" >&2
+  print_failure_logs
+  return 1
+}
+
+wait_awake() {
+  local deadline=$((SECONDS + READY_TIMEOUT))
+  while (( SECONDS < deadline )); do
+    if is_healthy && ! is_sleeping; then
+      echo "DiffusionGemma vLLM is awake at ${API_BASE}."
+      return 0
+    fi
+    if [[ -f "${PID_FILE}" ]] && ! is_process_running; then
+      echo "DiffusionGemma vLLM process exited while waiting to wake. Last logs:" >&2
+      print_failure_logs
+      return 1
+    fi
+    sleep 2
+  done
+  echo "Timed out waiting for DiffusionGemma vLLM to wake. Last logs:" >&2
+  print_failure_logs
+  return 1
+}
+
 setup_env() {
   [[ -x "${VENV}/bin/vllm" ]] || die "vLLM executable not found: ${VENV}/bin/vllm"
   mkdir -p \
@@ -311,7 +349,7 @@ start_server_attempt() {
     > "${LOG_FILE}" 2>&1 &
 
   echo "$!" > "${PID_FILE}"
-  wait_ready
+  wait_awake
 }
 
 start_server() {
@@ -343,7 +381,7 @@ sleep_server() {
   wait_ready
   echo "Putting DiffusionGemma vLLM to sleep (level=${SLEEP_LEVEL}) to release VRAM."
   post_control "/sleep?level=${SLEEP_LEVEL}"
-  echo "DiffusionGemma vLLM is sleeping."
+  wait_sleeping
 }
 
 wake_server() {
@@ -356,8 +394,7 @@ wake_server() {
     echo "Waking DiffusionGemma vLLM."
     post_control "/wake_up"
   fi
-  wait_ready
-  echo "DiffusionGemma vLLM is awake."
+  wait_awake
 }
 
 stop_server() {
@@ -406,7 +443,7 @@ show_status() {
 }
 
 test_api() {
-  wait_ready
+  wake_server
   curl -sS --max-time "${REQUEST_TIMEOUT}" "${API_BASE}/chat/completions" \
     -H "Content-Type: application/json" \
     -d "{
@@ -937,6 +974,13 @@ def _post_diffusiongemma_vllm(path: str, label: str, timeout: int = 300):
 
 def _sleep_diffusiongemma_vllm():
     _post_diffusiongemma_vllm("/sleep?level=1", "sleep", timeout=300)
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        if _diffusiongemma_vllm_is_sleeping():
+            print("DiffusionGemma vLLM is sleeping.")
+            return
+        time.sleep(2)
+    raise TimeoutError("Timed out waiting for DiffusionGemma vLLM to sleep.")
 
 
 def _wake_diffusiongemma_vllm(process: subprocess.Popen | None = None, timeout: int = 600):
@@ -953,10 +997,10 @@ def _wake_diffusiongemma_vllm(process: subprocess.Popen | None = None, timeout: 
         remaining = max(1, int(deadline - time.time()))
         try:
             _post_diffusiongemma_vllm("/wake_up", "wake", timeout=remaining)
-            return
+            last_error = None
         except Exception as exc:
             last_error = exc
-            time.sleep(2)
+        time.sleep(2)
 
     if last_error is not None:
         raise TimeoutError(f"Timed out waking DiffusionGemma vLLM: {last_error}") from last_error

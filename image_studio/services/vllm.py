@@ -6,6 +6,7 @@ from image_studio.services.managed_runtime import ManagedScriptConfig, ManagedSc
 
 # --- extracted runtime implementation ---
 import sys as _runtime_sys
+import time
 from dataclasses import dataclass, field
 from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
 
@@ -92,25 +93,38 @@ class DiffusionGemmaVllmService(ManagedScriptService):
         except Exception:
             return False
 
+    def _wait_until_ready(self, timeout: int | float) -> bool:
+        deadline = time.time() + max(0, float(timeout))
+        while time.time() < deadline:
+            if self.is_ready():
+                return True
+            time.sleep(2)
+        return self.is_ready()
+
     def wake(self):
         with self.lock:
             if self.is_ready():
                 return
             if not self.is_healthy() and not self.is_control_reachable():
                 return
-            res = self._run_script("wake", DIFFUSIONGEMMA_VLLM_READY_TIMEOUT)
+            res = self._run_script("wake", self.config.ready_timeout)
             if res.returncode != 0:
                 raise BackendUnavailableError(
                     "Failed to wake DiffusionGemma vLLM backend.\n"
                     f"STDOUT:\n{self._tail(res.stdout)}\n\n"
                     f"STDERR:\n{self._tail(res.stderr)}"
                 )
+            if not self._wait_until_ready(self.config.ready_timeout):
+                raise BackendUnavailableError(
+                    "DiffusionGemma vLLM wake command completed, but the backend is still "
+                    "sleeping or unhealthy."
+                )
 
     def _wake_existing(self) -> bool:
         if not self.is_healthy() and not self.is_control_reachable():
             return False
         self.wake()
-        return True
+        return self.is_ready()
 
     def ensure_running(self):
         self._ensure_running(
