@@ -36,6 +36,7 @@ from image_studio.core.models import Operation
 from image_studio.errors import AppError, BackendUnavailableError, ModelLoadError, UserInputError
 from image_studio.infra.bootstrap import GitBootstrap, RepoSpec
 from image_studio.infra.model_manager import ManagedModelSpec, ModelManager
+from image_studio.infra.model_storage import ModelStorageCatalog, ModelStorageTarget
 from image_studio.generators.base import EditRequest, GenerationRequest, UIRequest
 from image_studio.generators.registry import RequestHandlerRegistry
 from image_studio.parsing import extract_json_object as pure_extract_json_object
@@ -717,6 +718,186 @@ BOOGU_IMAGE_MODEL_LOCATIONS = {
     MODEL_BOOGU_IMAGE_EDIT_TURBO: APP_CONFIG.boogu.edit_turbo_model,
 }
 
+def _hf_repo_prefix(model_ref: str) -> str:
+    parts = [part for part in str(model_ref or "").split("/") if part]
+    return "/".join(parts[:2]) if len(parts) >= 2 else str(model_ref or "").strip()
+
+def _looks_like_hf_repo_id(value: str) -> bool:
+    value = (value or "").strip()
+    if not value or "://" in value or "\\" in value:
+        return False
+    if value.startswith(("/", "./", "../", "~", "models/")):
+        return False
+    if Path(value).expanduser().exists():
+        return False
+    parts = value.split("/")
+    return len(parts) == 2 and all(parts)
+
+def _configured_model_storage_location(value: str) -> tuple[tuple[Path, ...], tuple[str, ...]]:
+    value = (value or "").strip()
+    if not value:
+        return (), ()
+    if _looks_like_hf_repo_id(value):
+        return (), (value,)
+    return (Path(value),), ()
+
+def _boogu_storage_targets() -> list[ModelStorageTarget]:
+    targets = []
+    for key, model_name in BOOGU_IMAGE_MODEL_NAMES.items():
+        paths, repos = _configured_model_storage_location(BOOGU_IMAGE_MODEL_LOCATIONS[key])
+        if not paths and not repos:
+            paths = (Path(BASE_DIR) / "models" / model_name,)
+            repos = (f"Boogu/{model_name}",)
+        targets.append(
+            ModelStorageTarget(
+                key=key,
+                display_name=MODEL_SPECS[key].display_name,
+                paths=paths,
+                hf_repos=repos,
+                active_model_keys=(key,),
+            )
+        )
+    return targets
+
+def _pid_storage_targets() -> list[ModelStorageTarget]:
+    targets = []
+    for backbone, checkpoint_specs in PID_CHECKPOINTS.items():
+        vae_asset = PID_VAE_ASSETS.get(backbone)
+        for spec in checkpoint_specs.values():
+            paths = [Path(PID_DIR).joinpath(*spec.relative_checkpoint_path.split("/"))]
+            if vae_asset:
+                paths.append(Path(PID_DIR).joinpath(*vae_asset.split("/")))
+            targets.append(
+                ModelStorageTarget(
+                    key=spec.registry_key,
+                    display_name=MODEL_SPECS[spec.registry_key].display_name,
+                    paths=tuple(paths),
+                    active_model_keys=(spec.registry_key,),
+                )
+            )
+    return targets
+
+def _build_model_storage_catalog() -> ModelStorageCatalog:
+    krea_models = Path(KREA2_COMFY_DIR) / "ComfyUI" / "models"
+    targets: list[ModelStorageTarget] = [
+        ModelStorageTarget(
+            key=MODEL_GEN,
+            display_name=MODEL_SPECS[MODEL_GEN].display_name,
+            hf_repos=("Qwen/Qwen-Image", _hf_repo_prefix(GEN_MODEL)),
+            active_model_keys=(MODEL_GEN,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_EDIT,
+            display_name=MODEL_SPECS[MODEL_EDIT].display_name,
+            hf_repos=("Qwen/Qwen-Image-Edit-2509", _hf_repo_prefix(EDIT_MODEL)),
+            active_model_keys=(MODEL_EDIT,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_ZIMAGE_TURBO,
+            display_name=MODEL_SPECS[MODEL_ZIMAGE_TURBO].display_name,
+            hf_repos=(
+                "Tongyi-MAI/Z-Image-Turbo",
+                "nunchaku-tech/nunchaku-z-image-turbo",
+            ),
+            active_model_keys=(MODEL_ZIMAGE_TURBO,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_ZIMAGE_FULL,
+            display_name=MODEL_SPECS[MODEL_ZIMAGE_FULL].display_name,
+            hf_repos=("Tongyi-MAI/Z-Image",),
+            active_model_keys=(MODEL_ZIMAGE_FULL,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_HIDREAM_O1_FULL,
+            display_name=MODEL_SPECS[MODEL_HIDREAM_O1_FULL].display_name,
+            hf_repos=(HIDREAM_O1_SPECS[MODEL_HIDREAM_O1_FULL].model_id,),
+            active_model_keys=(MODEL_HIDREAM_O1_FULL,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_HIDREAM_O1_DEV,
+            display_name=MODEL_SPECS[MODEL_HIDREAM_O1_DEV].display_name,
+            hf_repos=(HIDREAM_O1_SPECS[MODEL_HIDREAM_O1_DEV].model_id,),
+            active_model_keys=(MODEL_HIDREAM_O1_DEV,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_KREA2_TURBO_NVFP4,
+            display_name=MODEL_SPECS[MODEL_KREA2_TURBO_NVFP4].display_name,
+            paths=(
+                krea_models / "diffusion_models" / "krea2_turbo_nvfp4.safetensors",
+                krea_models / "text_encoders" / "qwen3vl_4b_fp8_scaled.safetensors",
+                krea_models / "vae" / "qwen_image_vae.safetensors",
+            ),
+            active_model_keys=(MODEL_KREA2_TURBO_NVFP4,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_IDEOGRAM4_NVFP4,
+            display_name=MODEL_SPECS[MODEL_IDEOGRAM4_NVFP4].display_name,
+            hf_repos=(IDEOGRAM4_NVFP4_WEIGHTS_REPO, IDEOGRAM4_NVFP4_CONFIG_REPO),
+            active_model_keys=(MODEL_IDEOGRAM4_NVFP4,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_IDEOGRAM4_FP8_NVFP4_UNCOND,
+            display_name=MODEL_SPECS[MODEL_IDEOGRAM4_FP8_NVFP4_UNCOND].display_name,
+            hf_repos=(
+                IDEOGRAM4_FP8_NVFP4_UNCOND_WEIGHTS_REPO,
+                IDEOGRAM4_NVFP4_WEIGHTS_REPO,
+            ),
+            active_model_keys=(MODEL_IDEOGRAM4_FP8_NVFP4_UNCOND,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_IDEOGRAM4_FP8,
+            display_name=MODEL_SPECS[MODEL_IDEOGRAM4_FP8].display_name,
+            hf_repos=(IDEOGRAM4_FP8_WEIGHTS_REPO,),
+            active_model_keys=(MODEL_IDEOGRAM4_FP8,),
+        ),
+        ModelStorageTarget(
+            key="ideogram4_realism_lora",
+            display_name="Ideogram Realism Engine LoRA",
+            hf_repos=(IDEOGRAM4_REALISM_LORA_REPO,),
+            active_model_keys=(
+                MODEL_IDEOGRAM4_NVFP4,
+                MODEL_IDEOGRAM4_FP8_NVFP4_UNCOND,
+                MODEL_IDEOGRAM4_FP8,
+            ),
+        ),
+        ModelStorageTarget(
+            key=MODEL_SEEDVR2,
+            display_name=MODEL_SPECS[MODEL_SEEDVR2].display_name,
+            paths=(Path(SEEDVR2_DIR) / "models",),
+            active_model_keys=(MODEL_SEEDVR2,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_GEMMA,
+            display_name=MODEL_SPECS[MODEL_GEMMA].display_name,
+            hf_repos=tuple(repo for repo in (GEMMA_MODEL_ID, GEMMA_ASSISTANT_MODEL_ID) if repo),
+            active_model_keys=(MODEL_GEMMA,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_GEMMA_CHAT,
+            display_name=MODEL_SPECS[MODEL_GEMMA_CHAT].display_name,
+            hf_repos=tuple(repo for repo in (GEMMA_HUIHUI_MODEL_ID, GEMMA_NVFP4_ASSISTANT_MODEL_ID) if repo),
+            active_model_keys=(MODEL_GEMMA_CHAT,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_DIFFUSIONGEMMA_VLLM,
+            display_name=MODEL_SPECS[MODEL_DIFFUSIONGEMMA_VLLM].display_name,
+            hf_repos=(DIFFUSIONGEMMA_VLLM_HF_MODEL or "nvidia/diffusiongemma-26B-A4B-it-NVFP4",),
+            active_model_keys=(MODEL_DIFFUSIONGEMMA_VLLM,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_LTX_VIDEO,
+            display_name=MODEL_SPECS[MODEL_LTX_VIDEO].display_name,
+            paths=(
+                Path(LTX_WEB_DIR) / "models",
+                Path(LTX_WEB_DIR) / "checkpoints",
+            ),
+            active_model_keys=(MODEL_LTX_VIDEO,),
+        ),
+    ]
+    targets.extend(_boogu_storage_targets())
+    targets.extend(_pid_storage_targets())
+    return ModelStorageCatalog(targets)
+
 def _model_display_name(key: str) -> str:
     spec = MODEL_SPECS.get(key)
     return spec.display_name if spec else key
@@ -1292,6 +1473,7 @@ _RUNTIME_MODULES.append(_runtime_services_krea2_comfy)
 
 
 _krea2_comfy_service = Krea2ComfyService()
+MODEL_STORAGE = _build_model_storage_catalog()
 
 APP_CONTEXT = AppContext(
     config=APP_CONFIG,

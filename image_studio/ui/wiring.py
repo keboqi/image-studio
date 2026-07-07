@@ -65,6 +65,12 @@ def unload_model_and_refresh_with_vram(key):
 def unload_all_and_refresh_with_vram():
     return _with_vram_result(unload_all_and_refresh)
 
+def remove_downloaded_model_files_and_refresh_with_vram(key):
+    return _with_vram_result(remove_downloaded_model_files_and_refresh, key)
+
+def remove_all_downloaded_model_files_and_refresh_with_vram():
+    return _with_vram_result(remove_all_downloaded_model_files_and_refresh)
+
 def _wire_prompt_events(gen: dict, edit: dict, video: dict, chat: dict, vram_widget, llm_queue: dict) -> None:
     gen["enhance_btn"].click(
         enhance_prompt_and_vram,
@@ -288,18 +294,30 @@ def _wire_models_events(models: dict, vram_widget, gpu_queue: dict) -> None:
     models["refresh"].click(
         fn=refresh_models_tab_with_vram,
         inputs=None,
-        outputs=[models["status"], models["picker"], vram_widget],
+        outputs=[models["status"], models["picker"], models["storage_picker"], vram_widget],
     )
     models["unload"].click(
         fn=unload_model_and_refresh_with_vram,
         inputs=[models["picker"]],
-        outputs=[models["status"], models["picker"], vram_widget],
+        outputs=[models["status"], models["picker"], models["storage_picker"], vram_widget],
         **gpu_queue,
     )
     models["unload_all"].click(
         fn=unload_all_and_refresh_with_vram,
         inputs=None,
-        outputs=[models["status"], models["picker"], vram_widget],
+        outputs=[models["status"], models["picker"], models["storage_picker"], vram_widget],
+        **gpu_queue,
+    )
+    models["remove_files"].click(
+        fn=remove_downloaded_model_files_and_refresh_with_vram,
+        inputs=[models["storage_picker"]],
+        outputs=[models["status"], models["picker"], models["storage_picker"], vram_widget],
+        **gpu_queue,
+    )
+    models["remove_all_files"].click(
+        fn=remove_all_downloaded_model_files_and_refresh_with_vram,
+        inputs=None,
+        outputs=[models["status"], models["picker"], models["storage_picker"], vram_widget],
         **gpu_queue,
     )
 
@@ -364,6 +382,8 @@ __all__ = (
     'refresh_models_tab_with_vram',
     'unload_model_and_refresh_with_vram',
     'unload_all_and_refresh_with_vram',
+    'remove_downloaded_model_files_and_refresh_with_vram',
+    'remove_all_downloaded_model_files_and_refresh_with_vram',
     '_wire_prompt_events',
     '_generation_event_inputs',
     '_edit_event_inputs',

@@ -127,6 +127,10 @@ class DiffusionGemmaVllmService(ManagedScriptService):
             fallback = "stop" if action == "sleep" else None
             self._stop_script(action, fallback_action=fallback)
 
+    def stop_process(self):
+        with self.lock:
+            self._stop_script("stop")
+
     @staticmethod
     def _image_url_for_openai(part: dict[str, Any]) -> str:
         image_url = part.get("url") or part.get("image_url") or part.get("image")

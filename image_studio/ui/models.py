@@ -1,6 +1,7 @@
 """Extracted runtime implementation."""
 
 from __future__ import annotations
+from image_studio.infra.model_storage import NONE_CHOICE, format_storage_size
 
 # --- extracted runtime implementation ---
 import sys as _runtime_sys
@@ -11,10 +12,22 @@ _runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_s
 if _runtime_source is not None:
     _bind_runtime_module(globals(), vars(_runtime_source))
 
+def _md_cell(value: Any) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+def _storage_location_label(paths: list[str]) -> str:
+    if not paths:
+        return ""
+    first = paths[0]
+    if len(paths) == 1:
+        return first
+    return f"{first} (+{len(paths) - 1} more)"
+
 def _build_models_md() -> str:
     """Render the Models tab content as Markdown."""
     gpu = model_mgr.gpu_summary()
     models = model_mgr.status()
+    downloaded = MODEL_STORAGE.status()
 
     video_healthy, is_pipeline_loaded = check_ltx_video_health()
     ltx_loaded = video_healthy and is_pipeline_loaded
@@ -64,6 +77,22 @@ def _build_models_md() -> str:
             "- DiffusionGemma vLLM is sleeping; the server process is retained and VRAM is mostly released.",
         ])
 
+    lines.extend(["", "### Downloaded Model Files"])
+    if downloaded:
+        total_size = sum(int(item["size_bytes"]) for item in downloaded)
+        lines.append(f"Total detected: **{format_storage_size(total_size)}**")
+        lines.append("| Model | Disk Usage | Location |")
+        lines.append("|-------|------------|----------|")
+        for item in downloaded:
+            lines.append(
+                "| "
+                f"{_md_cell(item['display_name'])} | "
+                f"{format_storage_size(int(item['size_bytes']))} | "
+                f"{_md_cell(_storage_location_label(item['paths']))} |"
+            )
+    else:
+        lines.append("*No downloaded model files found in known cache locations.*")
+
     return "\n".join(lines)
 
 def _unload_model_action(model_key: str) -> str:
@@ -111,6 +140,69 @@ def _get_loaded_model_choices() -> list[str]:
         
     return keys if keys else ["(none)"]
 
+def _get_downloaded_model_choices():
+    entries = MODEL_STORAGE.status()
+    if not entries:
+        return [NONE_CHOICE]
+    return [
+        (
+            f"{entry['display_name']} ({format_storage_size(int(entry['size_bytes']))})",
+            entry["key"],
+        )
+        for entry in entries
+    ]
+
+def _loaded_model_picker_update():
+    return gr.update(choices=_get_loaded_model_choices(), value=None)
+
+def _downloaded_model_picker_update():
+    return gr.update(choices=_get_downloaded_model_choices(), value=None)
+
+def _models_tab_refresh_result():
+    return _build_models_md(), _loaded_model_picker_update(), _downloaded_model_picker_update()
+
+def _stop_active_model_for_storage_cleanup(model_key: str) -> None:
+    if model_key == MODEL_DIFFUSIONGEMMA_VLLM:
+        if model_mgr.is_loaded(model_key):
+            model_mgr.unload(model_key)
+        _diffusiongemma_vllm_service.stop_process()
+        return
+    if model_key == MODEL_KREA2_TURBO_NVFP4:
+        if model_mgr.is_loaded(model_key):
+            model_mgr.unload(model_key)
+        else:
+            _krea2_comfy_service.stop()
+        return
+    if model_key == MODEL_LTX_VIDEO:
+        if model_mgr.is_loaded(model_key):
+            model_mgr.unload(model_key)
+        _ltx_video_service.stop()
+        return
+    model_mgr.unload(model_key)
+
+def _prepare_storage_cleanup(target_key: str) -> None:
+    if not target_key or target_key == NONE_CHOICE:
+        return
+    for model_key in MODEL_STORAGE.active_model_keys(target_key):
+        _stop_active_model_for_storage_cleanup(model_key)
+    if target_key == "ideogram4_realism_lora":
+        _ideogram4_lora_cache.clear()
+
+def _remove_downloaded_model_files_action(target_key: str) -> str:
+    _prepare_storage_cleanup(target_key)
+    MODEL_STORAGE.remove(target_key)
+    return _build_models_md()
+
+def _remove_all_downloaded_model_files_action() -> str:
+    for item in MODEL_STORAGE.status():
+        _prepare_storage_cleanup(item["key"])
+    try:
+        _ideogram4_lora_cache.clear()
+    except Exception:
+        pass
+    MODEL_STORAGE.remove_all()
+    return _build_models_md()
+
 def _build_vram_widget_md() -> str:
     """Render a compact VRAM status for the header widget."""
     gpu = model_mgr.gpu_summary()
@@ -124,22 +216,35 @@ def _build_vram_widget_md() -> str:
     )
 
 def refresh_models_tab():
-    return _build_models_md(), gr.update(choices=_get_loaded_model_choices(), value=None)
+    return _models_tab_refresh_result()
 
 def unload_model_and_refresh(key):
-    return _unload_model_action(key), gr.update(choices=_get_loaded_model_choices(), value=None)
+    _unload_model_action(key)
+    return _models_tab_refresh_result()
 
 def unload_all_and_refresh():
-    return _unload_all_action(), gr.update(choices=_get_loaded_model_choices(), value=None)
+    _unload_all_action()
+    return _models_tab_refresh_result()
+
+def remove_downloaded_model_files_and_refresh(key):
+    _remove_downloaded_model_files_action(key)
+    return _models_tab_refresh_result()
+
+def remove_all_downloaded_model_files_and_refresh():
+    _remove_all_downloaded_model_files_action()
+    return _models_tab_refresh_result()
 
 __all__ = (
     '_build_models_md',
     '_unload_model_action',
     '_unload_all_action',
     '_get_loaded_model_choices',
+    '_get_downloaded_model_choices',
     '_build_vram_widget_md',
     'refresh_models_tab',
     'unload_model_and_refresh',
     'unload_all_and_refresh',
+    'remove_downloaded_model_files_and_refresh',
+    'remove_all_downloaded_model_files_and_refresh',
 )
 _seal_runtime_module(globals())

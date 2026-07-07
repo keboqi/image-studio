@@ -19,15 +19,18 @@ class ModelsTab(ComponentSet):
     unload_all: Any
     picker: Any
     unload: Any
+    storage_picker: Any
+    remove_files: Any
+    remove_all_files: Any
 
 
 def _build_models_tab() -> dict[str, Any]:
     with gr.Tab("Models", id=TAB_MODELS):
         gr.Markdown(
-            "Manage GPU-resident models.  The manager automatically "
+            "Manage GPU-resident models and downloaded model files. The manager automatically "
             "evicts the **least-recently-used** model when VRAM is "
             "insufficient for a new load, but you can also unload "
-            "models manually here."
+            "models manually here and remove cached weights from disk."
         )
         models_status = gr.Markdown(_build_models_md(), elem_id="models-status")
         with gr.Row():
@@ -41,6 +44,15 @@ def _build_models_tab() -> dict[str, Any]:
                 interactive=True,
             )
             models_unload_btn = gr.Button("Unload Selected", size="sm", variant="stop")
+        with gr.Row():
+            models_storage_picker = gr.Dropdown(
+                choices=_get_downloaded_model_choices(),
+                value=None,
+                label="Select downloaded files to remove",
+                interactive=True,
+            )
+            models_remove_files_btn = gr.Button("Remove Selected Files", size="sm", variant="stop")
+            models_remove_all_files_btn = gr.Button("Remove All Downloaded Files", size="sm", variant="stop")
 
     return ModelsTab(**{
         "status": models_status,
@@ -48,6 +60,9 @@ def _build_models_tab() -> dict[str, Any]:
         "unload_all": models_unload_all_btn,
         "picker": models_picker,
         "unload": models_unload_btn,
+        "storage_picker": models_storage_picker,
+        "remove_files": models_remove_files_btn,
+        "remove_all_files": models_remove_all_files_btn,
     })
 
 __all__ = (
