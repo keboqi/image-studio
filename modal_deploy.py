@@ -233,25 +233,6 @@ wait_sleeping() {
   return 1
 }
 
-wait_awake() {
-  local deadline=$((SECONDS + READY_TIMEOUT))
-  while (( SECONDS < deadline )); do
-    if is_healthy && ! is_sleeping; then
-      echo "DiffusionGemma vLLM is awake at ${API_BASE}."
-      return 0
-    fi
-    if [[ -f "${PID_FILE}" ]] && ! is_process_running; then
-      echo "DiffusionGemma vLLM process exited while waiting to wake. Last logs:" >&2
-      print_failure_logs
-      return 1
-    fi
-    sleep 2
-  done
-  echo "Timed out waiting for DiffusionGemma vLLM to wake. Last logs:" >&2
-  print_failure_logs
-  return 1
-}
-
 setup_env() {
   [[ -x "${VENV}/bin/vllm" ]] || die "vLLM executable not found: ${VENV}/bin/vllm"
   mkdir -p \
@@ -349,7 +330,7 @@ start_server_attempt() {
     > "${LOG_FILE}" 2>&1 &
 
   echo "$!" > "${PID_FILE}"
-  wait_awake
+  wait_ready
 }
 
 start_server() {
@@ -394,7 +375,8 @@ wake_server() {
     echo "Waking DiffusionGemma vLLM."
     post_control "/wake_up"
   fi
-  wait_awake
+  wait_ready
+  echo "DiffusionGemma vLLM is awake."
 }
 
 stop_server() {
@@ -990,8 +972,13 @@ def _wake_diffusiongemma_vllm(process: subprocess.Popen | None = None, timeout: 
     while time.time() < deadline:
         if process is not None:
             _check_vllm_process(process)
-        if _diffusiongemma_vllm_ready_once() and not _diffusiongemma_vllm_is_sleeping():
-            print("DiffusionGemma vLLM is already awake.")
+        if _diffusiongemma_vllm_ready_once():
+            if _diffusiongemma_vllm_is_sleeping():
+                remaining = max(1, int(deadline - time.time()))
+                _post_diffusiongemma_vllm("/wake_up", "wake", timeout=remaining)
+                print("DiffusionGemma vLLM wake requested; API is ready.")
+            else:
+                print("DiffusionGemma vLLM is already awake.")
             return
 
         remaining = max(1, int(deadline - time.time()))

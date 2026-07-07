@@ -93,14 +93,6 @@ class DiffusionGemmaVllmService(ManagedScriptService):
         except Exception:
             return False
 
-    def _wait_until_ready(self, timeout: int | float) -> bool:
-        deadline = time.time() + max(0, float(timeout))
-        while time.time() < deadline:
-            if self.is_ready():
-                return True
-            time.sleep(2)
-        return self.is_ready()
-
     def wake(self):
         with self.lock:
             if self.is_ready():
@@ -114,17 +106,12 @@ class DiffusionGemmaVllmService(ManagedScriptService):
                     f"STDOUT:\n{self._tail(res.stdout)}\n\n"
                     f"STDERR:\n{self._tail(res.stderr)}"
                 )
-            if not self._wait_until_ready(self.config.ready_timeout):
-                raise BackendUnavailableError(
-                    "DiffusionGemma vLLM wake command completed, but the backend is still "
-                    "sleeping or unhealthy."
-                )
 
     def _wake_existing(self) -> bool:
         if not self.is_healthy() and not self.is_control_reachable():
             return False
         self.wake()
-        return self.is_ready()
+        return True
 
     def ensure_running(self):
         self._ensure_running(

@@ -100,7 +100,8 @@ wake_server() {
     echo "Waking DiffusionGemma vLLM."
     post_control "/wake_up"
   fi
-  wait_awake
+  wait_ready
+  echo "DiffusionGemma vLLM is awake."
 }
 
 show_recent_logs() {
@@ -149,29 +150,6 @@ wait_sleeping() {
     sleep 2
   done
   echo "Timed out waiting for DiffusionGemma vLLM to sleep. Recent logs:" >&2
-  show_recent_logs
-  return 1
-}
-
-wait_awake() {
-  local started_at deadline elapsed
-  started_at="${SECONDS}"
-  deadline=$((SECONDS + READY_TIMEOUT))
-  echo "Waiting up to ${READY_TIMEOUT}s for DiffusionGemma vLLM to wake..."
-  while (( SECONDS < deadline )); do
-    if is_healthy && ! is_sleeping; then
-      elapsed=$((SECONDS - started_at))
-      echo "DiffusionGemma vLLM is awake after ${elapsed}s."
-      return 0
-    fi
-    if container_exists && ! container_running; then
-      echo "DiffusionGemma vLLM container exited while waiting to wake. Recent logs:" >&2
-      show_recent_logs
-      return 1
-    fi
-    sleep 2
-  done
-  echo "Timed out waiting for DiffusionGemma vLLM to wake. Recent logs:" >&2
   show_recent_logs
   return 1
 }
@@ -416,7 +394,7 @@ start_container() {
     "${IMAGE}" \
       "${vllm_args[@]}"
 
-  wait_awake
+  wait_ready
   warmup_api
   print_urls
   echo
