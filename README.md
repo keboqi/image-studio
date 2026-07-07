@@ -23,7 +23,7 @@ The full setup is intended for an Ubuntu-style Linux host with:
 - enough disk space for several model repositories and checkpoints;
 - a Hugging Face account with access to any gated models you enable.
 
-The quick-start script installs system packages, Python dependencies, Node.js, Pi, model repositories, checkpoints, and isolated companion services. It is intentionally a heavyweight machine-setup script; review it before running it on an existing environment.
+The quick-start script installs system packages, Python dependencies, Node.js, Pi, model repositories, and isolated companion-service environments. By default it does not pre-download model weights; the app downloads the specific weights needed by a workflow on first use. It is still a heavyweight machine-setup script, so review it before running it on an existing environment.
 
 ## Quick start
 
@@ -39,6 +39,12 @@ bash scripts/quickstart.sh --no-share
 ```
 
 The UI listens on `0.0.0.0:7860` by default. Generated media is written to `outputs/`.
+
+To restore the older behavior and pre-download the default model weights during setup:
+
+```bash
+bash scripts/quickstart.sh --with-models --no-share
+```
 
 To skip installation of the Pi coding agent and its Node.js environment:
 

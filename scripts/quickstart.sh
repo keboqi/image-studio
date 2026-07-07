@@ -8,6 +8,8 @@ cd "$ROOT_DIR"
 VENV_DIR="${VENV_DIR:-.venv}"
 PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 UV_BIN="${UV_BIN:-uv}"
+IMAGE_STUDIO_QUICKSTART_MODE="${IMAGE_STUDIO_QUICKSTART_MODE:-env-only}"
+LAUNCH_ARGS=()
 
 log() {
   printf '[image-studio] %s\n' "$*"
@@ -22,6 +24,77 @@ run_as_root() {
     printf 'sudo is required to install system packages. Install curl and ffmpeg manually.\n' >&2
     exit 1
   fi
+}
+
+print_usage() {
+  cat <<'EOF'
+Usage: bash scripts/quickstart.sh [quickstart options] [app options]
+
+Quickstart options:
+  --env-only              Prepare environments only; do not pre-download model weights (default).
+  --with-models           Also pre-download the historical default model weights.
+  --quickstart-mode MODE  MODE is env-only or with-models.
+
+All other arguments are passed to image_studio_webui.py.
+EOF
+}
+
+while (($#)); do
+  case "$1" in
+    --env-only|--no-models)
+      IMAGE_STUDIO_QUICKSTART_MODE="env-only"
+      shift
+      ;;
+    --with-models|--prefetch-models)
+      IMAGE_STUDIO_QUICKSTART_MODE="with-models"
+      shift
+      ;;
+    --quickstart-mode=*)
+      IMAGE_STUDIO_QUICKSTART_MODE="${1#*=}"
+      shift
+      ;;
+    --quickstart-mode)
+      if (($# < 2)); then
+        printf '%s\n' '--quickstart-mode requires a value: env-only or with-models.' >&2
+        exit 1
+      fi
+      IMAGE_STUDIO_QUICKSTART_MODE="$2"
+      shift 2
+      ;;
+    --quickstart-help)
+      print_usage
+      exit 0
+      ;;
+    --)
+      shift
+      while (($#)); do
+        LAUNCH_ARGS+=("$1")
+        shift
+      done
+      ;;
+    *)
+      LAUNCH_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+case "${IMAGE_STUDIO_QUICKSTART_MODE}" in
+  env-only|env|deps-only|no-models|on-demand)
+    QUICKSTART_MODE="env-only"
+    ;;
+  with-models|prefetch|prefetch-models|models|full)
+    QUICKSTART_MODE="with-models"
+    ;;
+  *)
+    printf 'Unknown quickstart mode: %s\nExpected env-only or with-models.\n' \
+      "${IMAGE_STUDIO_QUICKSTART_MODE}" >&2
+    exit 1
+    ;;
+esac
+
+prefetch_models_enabled() {
+  [[ "${QUICKSTART_MODE}" == "with-models" ]]
 }
 
 ensure_system_dependencies() {
@@ -97,9 +170,25 @@ clone_if_missing() {
   git clone "$@" "$repo" "$destination"
 }
 
+prefetch_optional_models() {
+  log "Pre-downloading optional model weights"
+
+  hf download Boogu/Boogu-Image-0.1-Turbo --local-dir models/Boogu-Image-0.1-Turbo
+  hf download Boogu/Boogu-Image-0.1-Base --local-dir models/Boogu-Image-0.1-Base
+  hf download Boogu/Boogu-Image-0.1-Edit --local-dir models/Boogu-Image-0.1-Edit
+
+  hf download nvidia/PiD --local-dir PiD --include \
+    "checkpoints/ae.safetensors" \
+    "checkpoints/QwenImage_VAE_2d.pth" \
+    "checkpoints/flux2_ae.safetensors" \
+    "checkpoints/PiD_res2k_sr4x_official_flux2_distill_4step/*" \
+    "checkpoints/PiD_res2kto4k_sr4x_official_flux2_distill_4step_2606/*"
+}
+
 # ---------------------------------------------------------------------------
 # Bootstrap
 # ---------------------------------------------------------------------------
+log "Quickstart mode: ${QUICKSTART_MODE}"
 ensure_system_dependencies
 ensure_uv
 ensure_venv
@@ -194,13 +283,10 @@ uv_install -U packaging ninja psutil
 clone_if_missing https://github.com/boogu-project/Boogu-Image.git boogu_image
 uv_install cache-dit webdataset python-dotenv omegaconf
 python boogu_image/utils/get_flash_attn.py
-hf download Boogu/Boogu-Image-0.1-Turbo --local-dir models/Boogu-Image-0.1-Turbo
-hf download Boogu/Boogu-Image-0.1-Base --local-dir models/Boogu-Image-0.1-Base
-hf download Boogu/Boogu-Image-0.1-Edit --local-dir models/Boogu-Image-0.1-Edit
 
 # Krea-2 uses its own environment and cannot disturb the main WebUI packages.
 export KREA2_COMFY_PORT="${KREA2_COMFY_PORT:-8188}"
-bash deploy_krea2_comfy.sh install
+KREA2_MODEL_MODE="${QUICKSTART_MODE}" bash deploy_krea2_comfy.sh install
 
 # Optional services and gated models require local credentials. Never commit a
 # real API key; export it only in the launch environment and run `hf auth login`.
@@ -211,28 +297,28 @@ export DIFFUSIONGEMMA_VLLM_MODEL="${DIFFUSIONGEMMA_VLLM_MODEL:-diffusiongemma}"
 
 # Optional PiD 4x decoder for Z-Image Full, Qwen Image, and Ideogram 4.
 clone_if_missing https://github.com/nv-tlabs/PiD.git PiD --depth 1
-hf download nvidia/PiD --local-dir PiD --include \
-  "checkpoints/ae.safetensors" \
-  "checkpoints/QwenImage_VAE_2d.pth" \
-  "checkpoints/flux2_ae.safetensors" \
-  "checkpoints/PiD_res2k_sr4x_official_flux2_distill_4step/*" \
-  "checkpoints/PiD_res2kto4k_sr4x_official_flux2_distill_4step_2606/*"
 uv_install hydra-core==1.3.2 omegaconf==2.3.0 attrs einops loguru termcolor \
   fvcore iopath pynvml wandb imageio opencv-python-headless pandas safetensors \
   "huggingface-hub>=1.0" sentencepiece boto3 botocore
+
+if prefetch_models_enabled; then
+  prefetch_optional_models
+else
+  log "Skipping optional model downloads; weights will be downloaded on first use."
+fi
 
 # SeedVR2 setup.
 clone_if_missing https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler.git \
   seedvr2_upscaler --depth 1
 uv_install -r seedvr2_upscaler/requirements.txt
 
-# LTX-Web video generation setup. Its launcher installs dependencies and models;
-# remove the final API launch because Image Studio owns that subprocess.
+# LTX-Web video generation setup. Its launcher installs dependencies and can
+# optionally prefetch models; Image Studio owns the API subprocess.
 clone_if_missing https://github.com/keboqi/ltx-web.git ltx-web
-sed -i 's/huggingface-cli/hf/g; s/python api.py//g' ltx-web/run.sh
 (
   cd ltx-web
-  PIP_CONSTRAINT="$CONSTRAINTS_FILE" sh run.sh
+  LTX_WEB_MODEL_MODE="${QUICKSTART_MODE}" LTX_WEB_NO_LAUNCH=1 \
+    PIP_CONSTRAINT="$CONSTRAINTS_FILE" bash run.sh
 )
 
 # Reconcile binary packages after every third-party requirements file. OpenCV
@@ -260,4 +346,4 @@ print(
 PY
 
 log "Starting Image Studio WebUI"
-exec python image_studio_webui.py "$@"
+exec python image_studio_webui.py "${LAUNCH_ARGS[@]}"

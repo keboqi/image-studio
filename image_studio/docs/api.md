@@ -132,7 +132,7 @@ preview_webp_path, status_text, raw_png_path, vram_markdown = client.predict(
 ### 5. Video Generation (LTX-Video)
 **Endpoint:** `/run/generate_video` (or `api_name="generate_video"`)
 
-Requires the `ltx-web` backend to be running (started automatically via quick start).
+The `ltx-web` backend is started automatically on first video generation; missing model weights are downloaded by that backend when needed.
 
 **Python Client Example:**
 ```python

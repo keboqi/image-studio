@@ -688,11 +688,9 @@ image = (
     
     # LTX-Web Video Generation Setup
     .run_commands(
-        "git clone https://github.com/keboqi/ltx-web.git /root/ltx-web",
-        "cd /root/ltx-web && sed -i 's/python api.py//g' run.sh",
-        "cd /root/ltx-web && sed -i 's/huggingface-cli/hf/g' run.sh"
+        "git clone https://github.com/keboqi/ltx-web.git /root/ltx-web"
     )
-    # We install ltx-web requirements in the image, but do NOT run `sh run.sh` here
+    # We install ltx-web requirements in the image, but do NOT run `run.sh` here
     # to avoid downloading gigabytes of models into the image layer.
     .run_commands(
         "cd /root/ltx-web && pip install -r requirements.txt",

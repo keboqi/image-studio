@@ -59,6 +59,7 @@ TEXT_ENCODER_FILE="text_encoders/qwen3vl_4b_fp8_scaled.safetensors"
 VAE_FILE="vae/qwen_image_vae.safetensors"
 
 ACTION="${1:-start}"
+KREA2_MODEL_MODE="${KREA2_MODEL_MODE:-${KREA2_DOWNLOAD_MODE:-on-demand}}"
 
 if [[ "${OS:-}" == "Windows_NT" ]]; then
   VENV_PYTHON="${VENV_DIR}/Scripts/python.exe"
@@ -171,7 +172,7 @@ install_backend_if_needed() {
 
   if [[ -f "${INSTALL_STAMP}" && "${KREA2_FORCE_INSTALL:-0}" != "1" ]]; then
     echo "Install stamp found: ${INSTALL_STAMP}"
-    download_models
+    maybe_prefetch_models
     return 0
   fi
 
@@ -187,10 +188,38 @@ install_backend_if_needed() {
   run_pip install --python "${VENV_PYTHON}" -r "${COMFY_DIR}/requirements.txt"
   run_pip install --python "${VENV_PYTHON}" --upgrade "huggingface_hub[hf_xet]" requests websocket-client
 
-  download_models
+  maybe_prefetch_models
   doctor
 
   date -u +"%Y-%m-%dT%H:%M:%SZ" > "${INSTALL_STAMP}"
+}
+
+should_prefetch_models() {
+  case "${KREA2_MODEL_MODE}" in
+    with-models|prefetch|prefetch-models|models|full|1|true|yes)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+maybe_prefetch_models() {
+  if should_prefetch_models; then
+    download_models
+  else
+    echo "Skipping Krea-2 model downloads during setup (KREA2_MODEL_MODE=${KREA2_MODEL_MODE})."
+    echo "They will be downloaded on first start/generation if missing."
+  fi
+}
+
+ensure_runtime_models() {
+  if [[ "${KREA2_SKIP_MODEL_DOWNLOAD:-0}" == "1" ]]; then
+    echo "Skipping Krea-2 runtime model check because KREA2_SKIP_MODEL_DOWNLOAD=1."
+    return 0
+  fi
+  download_models
 }
 
 download_models() {
@@ -298,6 +327,7 @@ wait_ready() {
 start_service() {
   install_backend_if_needed
   export_runtime_env
+  ensure_runtime_models
 
   if is_ready; then
     echo "Krea-2 ComfyUI service already ready at ${SERVER_BASE}."
@@ -651,6 +681,9 @@ Primary path:
 
 Fresh reset:
   KREA2_RECREATE_VENV=1 bash $0 start
+
+Prefetch model weights during setup:
+  KREA2_MODEL_MODE=with-models bash $0 setup
 
 Generate 2048x2048:
   WIDTH=2048 HEIGHT=2048 bash $0 generate "a cinematic mountain greenhouse at sunrise"
