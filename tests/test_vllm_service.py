@@ -28,7 +28,7 @@ def test_wake_does_not_wait_for_sleep_state_to_flip(monkeypatch):
         or SimpleNamespace(returncode=0, stdout="ok", stderr=""),
     )
 
-    service.wake()
+    assert service.wake() is True
 
     assert calls == [("wake", 0)]
 
@@ -51,18 +51,26 @@ def test_wake_fails_if_launcher_returns_error(monkeypatch):
 
 def test_wake_existing_succeeds_after_wake_command(monkeypatch):
     service = _service()
+    calls = []
 
     monkeypatch.setattr(service, "is_healthy", lambda: False)
     monkeypatch.setattr(service, "is_control_reachable", lambda: True)
     monkeypatch.setattr(service, "is_ready", lambda: False)
-    monkeypatch.setattr(service, "wake", lambda: None)
+    monkeypatch.setattr(
+        service,
+        "_run_script",
+        lambda action, timeout: calls.append((action, timeout))
+        or SimpleNamespace(returncode=0, stdout="ok", stderr=""),
+    )
 
     assert service._wake_existing() is True
+    assert calls == [("wake", 0)]
 
 
 def test_wake_existing_falls_back_to_start_when_control_unreachable(monkeypatch):
     service = _service()
 
+    monkeypatch.setattr(service, "is_ready", lambda: False)
     monkeypatch.setattr(service, "is_healthy", lambda: False)
     monkeypatch.setattr(service, "is_control_reachable", lambda: False)
 

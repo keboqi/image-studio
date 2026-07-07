@@ -9,7 +9,7 @@ def test_quickstart_retains_full_service_setup():
     required_fragments = (
         "@earendil-works/pi-coding-agent",
         "wiltodelta/remove-ai-watermarks",
-        "flash-attn --no-build-isolation --no-cache-dir",
+        "uv_install sageattention --no-build-isolation",
         "nunchaku import ok",
         "packaging ninja psutil",
         "Boogu/Boogu-Image-0.1-Turbo",
@@ -22,12 +22,13 @@ def test_quickstart_retains_full_service_setup():
     )
     missing = [fragment for fragment in required_fragments if fragment not in QUICKSTART]
     assert not missing, f"quickstart setup blocks were dropped: {missing}"
+    assert "uv_install flash-attn --no-build-isolation" not in QUICKSTART
 
 
 def test_binary_compatibility_repair_runs_after_third_party_setups():
-    seedvr2 = QUICKSTART.index("pip_install -r seedvr2_upscaler/requirements.txt")
+    seedvr2 = QUICKSTART.index("uv_install -r seedvr2_upscaler/requirements.txt")
     ltx = QUICKSTART.index('PIP_CONSTRAINT="$CONSTRAINTS_FILE" sh run.sh')
-    repair = QUICKSTART.index('pip_install --upgrade --force-reinstall "numpy<2.0"')
+    repair = QUICKSTART.index('uv_install --upgrade --force-reinstall "numpy<2.0"')
     launch = QUICKSTART.index('python image_studio_webui.py "$@"')
 
     assert seedvr2 < ltx < repair < launch

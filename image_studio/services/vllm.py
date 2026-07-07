@@ -93,12 +93,15 @@ class DiffusionGemmaVllmService(ManagedScriptService):
         except Exception:
             return False
 
-    def wake(self):
+    def _has_reachable_backend(self) -> bool:
+        return self.is_healthy() or self.is_control_reachable()
+
+    def wake(self) -> bool:
         with self.lock:
             if self.is_ready():
-                return
-            if not self.is_healthy() and not self.is_control_reachable():
-                return
+                return True
+            if not self._has_reachable_backend():
+                return False
             res = self._run_script("wake", self.config.ready_timeout)
             if res.returncode != 0:
                 raise BackendUnavailableError(
@@ -106,12 +109,10 @@ class DiffusionGemmaVllmService(ManagedScriptService):
                     f"STDOUT:\n{self._tail(res.stdout)}\n\n"
                     f"STDERR:\n{self._tail(res.stderr)}"
                 )
+            return True
 
     def _wake_existing(self) -> bool:
-        if not self.is_healthy() and not self.is_control_reachable():
-            return False
-        self.wake()
-        return True
+        return self.wake()
 
     def ensure_running(self):
         self._ensure_running(
