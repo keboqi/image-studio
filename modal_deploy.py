@@ -698,7 +698,10 @@ image = (
         "cd /root/ltx-web && pip install -e LTX-2/packages/ltx-core",
         "cd /root/ltx-web && pip install -e LTX-2/packages/ltx-pipelines"
     )
-    .pip_install("numpy<2.0")
+    # Reconcile SciPy with the NumPy 1.x ABI after all third-party requirements.
+    # SciPy 1.17+ requires NumPy 2 and otherwise fails during diffusers import
+    # (for example, while resolving FlowMatchEulerDiscreteScheduler).
+    .pip_install("numpy<2.0", "scipy>=1.13,<1.17")
     .run_commands("cd /root/ideogram4 && git fetch --all && git pull")
     .run_commands(
         f"python -m venv {DIFFUSIONGEMMA_VLLM_VENV}",
