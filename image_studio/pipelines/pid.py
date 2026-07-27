@@ -187,22 +187,6 @@ def _ensure_pid_experiment_available(backbone: str, spec: PIDCheckpointSpec):
         f"Update or reclone {_runtime().PID_DIR} from {_runtime().PID_REPO}."
     )
 
-def _pipeline_execution_device(pipe) -> _runtime().torch.device:
-    target_device = getattr(pipe, "_execution_device", None)
-    if target_device is None or getattr(target_device, "type", None) == "meta":
-        target_device = _runtime().torch.device("cuda" if _runtime().torch.cuda.is_available() else "cpu")
-    return target_device
-
-def _zimage_decode_latent_01(pipe, latent: _runtime().torch.Tensor) -> _runtime().torch.Tensor:
-    """VAE-decode normalized Z-Image latents to an RGB tensor in [0, 1]."""
-    scale = float(pipe.vae.config.scaling_factor)
-    shift = float(getattr(pipe.vae.config, "shift_factor", None) or 0.0)
-    target_device = _pipeline_execution_device(pipe)
-    raw_latent = (latent.to(target_device) / scale + shift).to(pipe.vae.dtype)
-    with _runtime().torch.no_grad():
-        decoded = pipe.vae.decode(raw_latent, return_dict=False)[0]
-    return (decoded * 0.5 + 0.5).clamp(0, 1)
-
 def _qwen_extract_latent(pipe, raw_output, width: int, height: int) -> _runtime().torch.Tensor:
     """Normalize Qwen Image output_type='latent' into (B, C, H, W)."""
     latent = raw_output.images
@@ -222,23 +206,6 @@ def _qwen_extract_latent(pipe, raw_output, width: int, height: int) -> _runtime(
     if latent.ndim != 4:
         raise UserInputError(f"Qwen Image returned an unexpected latent shape: {tuple(latent.shape)}")
     return latent
-
-def _qwen_decode_latent_01(pipe, latent: _runtime().torch.Tensor) -> _runtime().torch.Tensor:
-    """VAE-decode normalized Qwen Image latents to an RGB tensor in [0, 1]."""
-    config = pipe.vae.config
-    if not hasattr(config, "latents_mean") or not hasattr(config, "latents_std"):
-        raise UserInputError("Qwen Image VAE config is missing latents_mean/latents_std.")
-
-    target_device = _pipeline_execution_device(pipe)
-    latent = latent.to(target_device)
-    latents_mean = _runtime().torch.tensor(config.latents_mean).view(1, -1, 1, 1).to(latent.device, latent.dtype)
-    latents_std = _runtime().torch.tensor(config.latents_std).view(1, -1, 1, 1).to(latent.device, latent.dtype)
-    raw_latent = (latent * latents_std + latents_mean).unsqueeze(2).to(pipe.vae.dtype)
-    with _runtime().torch.no_grad():
-        decoded = pipe.vae.decode(raw_latent, return_dict=False)[0]
-    if decoded.ndim == 5:
-        decoded = decoded[:, :, 0]
-    return (decoded * 0.5 + 0.5).clamp(0, 1)
 
 def _neg1_tensor_to_pil(tensor: _runtime().torch.Tensor) -> _runtime().Image.Image:
     """Convert a PiD output tensor in [-1, 1] to PIL."""
@@ -278,16 +245,12 @@ def _pid_data_batch(
     prompt: str,
     latent: _runtime().torch.Tensor,
     sigma: float,
-    baseline_neg1_1: _runtime().torch.Tensor | None = None,
 ) -> dict[str, Any]:
-    data_batch = {
+    return {
         pid_model.config.input_caption_key: [prompt],
         "LQ_latent": latent.to(dtype=_runtime().torch.bfloat16, device="cuda"),
         "degrade_sigma": _runtime().torch.tensor([sigma], device="cuda", dtype=_runtime().torch.float32),
     }
-    if baseline_neg1_1 is not None:
-        data_batch["LQ_video_or_image"] = baseline_neg1_1.to(dtype=_runtime().torch.bfloat16, device="cuda")
-    return data_batch
 
 def _pid_generate_image(
     pid_model,
@@ -320,9 +283,7 @@ class PiDBackboneAdapter:
     backbone: str
     load_decoder: Callable[[str], Any]
     extract_latent: Callable[[Any, Any, int, int], _runtime().torch.Tensor]
-    decode_baseline_01: Callable[[Any, _runtime().torch.Tensor], _runtime().torch.Tensor]
     lowres_desc: str
-    vae_desc: str
     decoder_desc: str
     decode_desc: str
 
@@ -333,9 +294,7 @@ def _pid_backbone_adapter(backbone: str) -> PiDBackboneAdapter:
             backbone=_runtime().PID_BACKBONE_ZIMAGE,
             load_decoder=get_zimage_pid_decoder,
             extract_latent=_zimage_extract_latent,
-            decode_baseline_01=_zimage_decode_latent_01,
             lowres_desc="Generating low-res latent...",
-            vae_desc="VAE decoding low-res conditioning image...",
             decoder_desc="Loading PiD decoder...",
             decode_desc="PiD 4x decoding...",
         ),
@@ -343,9 +302,7 @@ def _pid_backbone_adapter(backbone: str) -> PiDBackboneAdapter:
             backbone=_runtime().PID_BACKBONE_QWEN,
             load_decoder=get_qwen_pid_decoder,
             extract_latent=_qwen_extract_latent,
-            decode_baseline_01=_qwen_decode_latent_01,
             lowres_desc="Generating low-res Qwen latent...",
-            vae_desc="VAE decoding low-res conditioning image...",
             decoder_desc="Loading Qwen PiD decoder...",
             decode_desc="PiD 4x decoding...",
         ),
@@ -380,30 +337,23 @@ def _decode_pipeline_with_pid(
         raw_output = pipe(**pid_kwargs)
         latent = adapter.extract_latent(pipe, raw_output, width, height)
 
-        progress(0.55, desc=adapter.vae_desc)
-        with _runtime().torch.no_grad():
-            baseline_01 = adapter.decode_baseline_01(pipe, latent)
-        baseline_neg1_1 = baseline_01 * 2.0 - 1.0
-
-        progress(0.68, desc=adapter.decoder_desc)
+        progress(0.55, desc=adapter.decoder_desc)
         pid_model = adapter.load_decoder(pid_ckpt_type)
-        lq_h, lq_w = baseline_01.shape[-2], baseline_01.shape[-1]
         data_batch = _pid_data_batch(
             pid_model,
             prompt,
             latent,
             _scheduler_sigma(pipe),
-            baseline_neg1_1,
         )
 
-        progress(0.78, desc=adapter.decode_desc)
+        progress(0.72, desc=adapter.decode_desc)
         return _pid_generate_image(
             pid_model,
             data_batch,
             pid_cfg=pid_cfg,
             pid_steps=pid_steps,
             seed=seed,
-            image_size=(lq_h * _runtime().PID_SCALE, lq_w * _runtime().PID_SCALE),
+            image_size=(pid_out_h, pid_out_w),
         )
 
     result, elapsed = _runtime().timed_result(generate_with_pid)
@@ -624,10 +574,7 @@ __all__ = (
     '_ensure_pid_checkpoint',
     '_ensure_pid_vae_asset',
     '_ensure_pid_experiment_available',
-    '_pipeline_execution_device',
-    '_zimage_decode_latent_01',
     '_qwen_extract_latent',
-    '_qwen_decode_latent_01',
     '_neg1_tensor_to_pil',
     'resolve_seed',
     '_scheduler_sigma',

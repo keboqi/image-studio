@@ -116,6 +116,12 @@ def test_application_import_is_lightweight_and_runtime_remains_compatible(monkey
         assert runtime._resolve_pid_ckpt_type(backbone, "auto", 1024, 1024) == "2kto4k_v1pt5"
         assert runtime._resolve_pid_ckpt_type(backbone, "2kto4k", 1024, 1024) == "2kto4k_v1pt5"
 
+    pid_model = types.SimpleNamespace(
+        config=types.SimpleNamespace(input_caption_key="caption")
+    )
+    pid_batch = runtime._pid_data_batch(pid_model, "a cat", Dummy(), 0.0)
+    assert set(pid_batch) == {"caption", "LQ_latent", "degrade_sigma"}
+
     package_dir = Path(runtime.__file__).parent
     referenced_names = {
         name

@@ -23,7 +23,6 @@ def _krea2_guidance_scale(cfg: float) -> float:
     return 1.0 if cfg <= 0.0 else cfg
 
 def _decode_krea2_with_pid(
-    image: Image.Image,
     latent: _runtime().torch.Tensor,
     prompt: str,
     width: int,
@@ -34,21 +33,11 @@ def _decode_krea2_with_pid(
     seed: int,
     progress,
 ) -> tuple[Image.Image, float, str, int, int]:
-    """PiD 4x decode a Krea2 result using the Qwen Image VAE backbone.
-
-    *latent* is the raw KSampler output from ComfyUI (saved by SaveLatent).
-    *image* is the VAE-decoded baseline (saved by SaveImage), used as the
-    low-resolution conditioning input for PiD.
-    """
+    """PiD 4x decode a raw Krea2 KSampler latent using the Qwen Image backbone."""
     if not _runtime().torch.cuda.is_available():
         raise UserInputError("PiD decoding requires CUDA.")
     pid_out_w, pid_out_h = _runtime()._validate_pid_dims(width, height)
     pid_ckpt_type = _runtime()._resolve_pid_ckpt_type(_runtime().PID_BACKBONE_QWEN, pid_ckpt, width, height)
-
-    # Convert PIL baseline image to [-1, 1] tensor matching PiD expectations.
-    baseline_np = _runtime().np.array(image.convert("RGB")).astype(_runtime().np.float32) / 255.0
-    baseline_01 = _runtime().torch.from_numpy(baseline_np).permute(2, 0, 1).unsqueeze(0)  # (1, 3, H, W)
-    baseline_neg1_1 = (baseline_01 * 2.0 - 1.0).to(dtype=_runtime().torch.bfloat16, device="cuda")
 
     # Ensure latent is on cuda in the right dtype.
     # ComfyUI SaveLatent preserves the Qwen VAE's CogVideoX 5D format
@@ -67,13 +56,11 @@ def _decode_krea2_with_pid(
     def decode_with_pid() -> Image.Image:
         progress(0.68, desc="Loading Krea2 Qwen PiD decoder...")
         pid_model = _runtime().get_qwen_pid_decoder(pid_ckpt_type)
-        lq_h, lq_w = baseline_01.shape[-2], baseline_01.shape[-1]
         data_batch = _runtime()._pid_data_batch(
             pid_model,
             prompt,
             latent,
             0.0,  # sigma=0: ComfyUI KSampler outputs denoised latents
-            baseline_neg1_1,
         )
         progress(0.78, desc="PiD 4x decoding Krea2 latent...")
         return _runtime()._pid_generate_image(
@@ -82,7 +69,7 @@ def _decode_krea2_with_pid(
             pid_cfg=pid_cfg,
             pid_steps=pid_steps,
             seed=seed,
-            image_size=(lq_h * _runtime().PID_SCALE, lq_w * _runtime().PID_SCALE),
+            image_size=(pid_out_h, pid_out_w),
         )
 
     result, elapsed = _runtime().timed_result(decode_with_pid)
@@ -120,7 +107,7 @@ def run_krea2_generate(
         )
         progress(0.60, desc="Preparing Krea2 PiD 4x decode...")
         result, pid_elapsed, pid_ckpt_type, pid_out_w, pid_out_h = _decode_krea2_with_pid(
-            image, latent, prompt, width, height,
+            latent, prompt, width, height,
             pid_ckpt, pid_steps, pid_cfg, seed, progress,
         )
         elapsed = gen_elapsed + pid_elapsed
