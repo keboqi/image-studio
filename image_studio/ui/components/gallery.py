@@ -1,16 +1,14 @@
 """Extracted runtime implementation."""
 
 from __future__ import annotations
-from image_studio.ui.components.base import ComponentSet
 
 # --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+from dataclasses import dataclass
+from typing import Any
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
+from image_studio.runtime_access import runtime_namespace as _runtime
+from image_studio.ui.components.base import ComponentSet
+
 
 @dataclass
 class GalleryTab(ComponentSet):
@@ -27,20 +25,20 @@ class GalleryTab(ComponentSet):
     selected: Any
 
 
-def _build_gallery_tab() -> dict[str, Any]:
-    with gr.Tab("Gallery", id=TAB_GALLERY) as gallery_tab:
-        gr.Markdown("View generated, edited, and upscaled images below. Click an image to view it full-size or download.")
-        with gr.Row():
-            refresh_btn = gr.Button("Refresh Gallery", size="sm")
-            download_btn = gr.DownloadButton("Download Selected", size="sm", interactive=False)
-            gal_to_edit = gr.Button("Send Selected to Edit", size="sm", elem_classes=["send-btn"])
-            gal_to_upscale = gr.Button("Send Selected to Upscale", size="sm", elem_classes=["send-btn"])
-            gal_to_ai_remover = gr.Button("Send Selected to AI Remover", size="sm", elem_classes=["send-btn"])
-            gal_to_video = gr.Button("Send to Video", size="sm", elem_classes=["send-btn"])
-            delete_btn = gr.Button("Delete Selected", size="sm", variant="stop")
-            remove_all_img_btn = gr.Button("Remove All", size="sm", variant="stop")
-        gallery = gr.Gallery(
-            value=get_gallery_images(),
+def _build_gallery_tab() -> GalleryTab:
+    with _runtime().gr.Tab("Gallery", id=_runtime().TAB_GALLERY) as gallery_tab:
+        _runtime().gr.Markdown("View generated, edited, and upscaled images below. Click an image to view it full-size or download.")
+        with _runtime().gr.Row():
+            refresh_btn = _runtime().gr.Button("Refresh Gallery", size="sm")
+            download_btn = _runtime().gr.DownloadButton("Download Selected", size="sm", interactive=False)
+            gal_to_edit = _runtime().gr.Button("Send Selected to Edit", size="sm", elem_classes=["send-btn"])
+            gal_to_upscale = _runtime().gr.Button("Send Selected to Upscale", size="sm", elem_classes=["send-btn"])
+            gal_to_ai_remover = _runtime().gr.Button("Send Selected to AI Remover", size="sm", elem_classes=["send-btn"])
+            gal_to_video = _runtime().gr.Button("Send to Video", size="sm", elem_classes=["send-btn"])
+            delete_btn = _runtime().gr.Button("Delete Selected", size="sm", variant="stop")
+            remove_all_img_btn = _runtime().gr.Button("Remove All", size="sm", variant="stop")
+        gallery = _runtime().gr.Gallery(
+            value=_runtime().get_gallery_images(),
             label="Image Gallery",
             show_label=False,
             elem_id="gallery",
@@ -50,7 +48,7 @@ def _build_gallery_tab() -> dict[str, Any]:
             height=600,
             allow_preview=True,
         )
-        selected_gallery_item = gr.State(None)
+        selected_gallery_item = _runtime().gr.State(None)
 
     return GalleryTab(**{
         "tab": gallery_tab,
@@ -69,4 +67,3 @@ def _build_gallery_tab() -> dict[str, Any]:
 __all__ = (
     '_build_gallery_tab',
 )
-_seal_runtime_module(globals())

@@ -1,30 +1,29 @@
 """Extracted runtime implementation."""
 
 from __future__ import annotations
-from image_studio.errors import UserInputError
+
+from typing import Any
+
+from PIL import Image
 
 # --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+from image_studio.errors import UserInputError
+from image_studio.runtime_access import runtime_namespace as _runtime
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
 
 def _extract_json_block(text: str) -> str | None:
-    return extract_json_object(text)
+    return _runtime().extract_json_object(text)
 
 def _fix_unescaped_json_newlines(text: str) -> str:
-    return fix_unescaped_json_newlines(text)
+    return _runtime().fix_unescaped_json_newlines(text)
 
 def _parse_enhance_json(text: str) -> dict:
-    return parse_enhance_json(text)
+    return _runtime().parse_enhance_json(text)
 
 def _fallback_enhanced_prompt(raw_prompt: str, raw_output: str = "") -> str:
     raw_prompt = raw_prompt.strip()
     if raw_output:
-        cleaned = re.sub(r"<[^>]+>", "", raw_output).strip()
+        cleaned = _runtime().re.sub(r"<[^>]+>", "", raw_output).strip()
         if cleaned and len(cleaned.split()) >= 8 and not cleaned.startswith("{"):
             return cleaned
     return (
@@ -57,7 +56,7 @@ def enhance_prompt(raw_prompt: str, image: Any = None, chat_model: str | None = 
     )
     
     if image is not None:
-        tmp_path = save_chat_attachment(image, "enhance_img")
+        tmp_path = _runtime().save_chat_attachment(image, "enhance_img")
         user_content = [
             {"type": "image", "url": tmp_path},
             {"type": "text", "text": text_content}
@@ -66,24 +65,24 @@ def enhance_prompt(raw_prompt: str, image: Any = None, chat_model: str | None = 
         user_content = text_content
 
     messages = [
-        {"role": "system", "content": _ENHANCE_SYSTEM},
+        {"role": "system", "content": _runtime()._ENHANCE_SYSTEM},
         {"role": "user", "content": user_content},
     ]
-    t0 = time.time()
-    raw_result = _gemma_generate(messages, max_new_tokens=1024, chat_model=chat_model)
-    elapsed = time.time() - t0
+    t0 = _runtime().time.time()
+    raw_result = _runtime()._gemma_generate(messages, max_new_tokens=1024, chat_model=chat_model)
+    elapsed = _runtime().time.time() - t0
     try:
         parsed = _parse_enhance_json(raw_result)
         prompt = parsed["prompt"].strip()
-        log.info(
+        _runtime().log.info(
             "Prompt enhanced in %.1fs | resolved knowledge: %s",
             elapsed,
             str(parsed.get("resolved_knowledge", "none"))[:240],
         )
         return prompt
     except ValueError as e:
-        log.warning("Prompt enhancer JSON parse failed: %s", e)
-        log.info("Prompt enhanced in %.1fs with fallback", elapsed)
+        _runtime().log.warning("Prompt enhancer JSON parse failed: %s", e)
+        _runtime().log.info("Prompt enhanced in %.1fs with fallback", elapsed)
         return _fallback_enhanced_prompt(raw_prompt, raw_result)
 
 def enhance_video_prompt(raw_prompt: str, image: Any = None, chat_model: str | None = None) -> str:
@@ -98,7 +97,7 @@ def enhance_video_prompt(raw_prompt: str, image: Any = None, chat_model: str | N
     )
     
     if image is not None:
-        tmp_path = save_chat_attachment(image, "enhance_vid_img")
+        tmp_path = _runtime().save_chat_attachment(image, "enhance_vid_img")
         user_content = [
             {"type": "image", "url": tmp_path},
             {"type": "text", "text": text_content}
@@ -107,30 +106,30 @@ def enhance_video_prompt(raw_prompt: str, image: Any = None, chat_model: str | N
         user_content = text_content
 
     messages = [
-        {"role": "system", "content": _ENHANCE_VIDEO_SYSTEM},
+        {"role": "system", "content": _runtime()._ENHANCE_VIDEO_SYSTEM},
         {"role": "user", "content": user_content},
     ]
-    t0 = time.time()
-    raw_result = _gemma_generate(messages, max_new_tokens=1024, chat_model=chat_model)
-    elapsed = time.time() - t0
+    t0 = _runtime().time.time()
+    raw_result = _runtime()._gemma_generate(messages, max_new_tokens=1024, chat_model=chat_model)
+    elapsed = _runtime().time.time() - t0
     try:
         parsed = _parse_enhance_json(raw_result)
         prompt = parsed["prompt"].strip()
-        log.info(
+        _runtime().log.info(
             "Video prompt enhanced in %.1fs | resolved knowledge: %s",
             elapsed,
             str(parsed.get("resolved_knowledge", "none"))[:240],
         )
         return prompt
     except ValueError as e:
-        log.warning("Video prompt enhancer JSON parse failed: %s", e)
-        log.info("Video prompt enhanced in %.1fs with fallback", elapsed)
+        _runtime().log.warning("Video prompt enhancer JSON parse failed: %s", e)
+        _runtime().log.info("Video prompt enhanced in %.1fs with fallback", elapsed)
         return _fallback_enhanced_prompt(raw_prompt, raw_result)
 
 def _pil_to_base64_url(img: Image.Image) -> str:
-    buf = io.BytesIO()
+    buf = _runtime().io.BytesIO()
     img.save(buf, format="PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode()
+    b64 = _runtime().base64.b64encode(buf.getvalue()).decode()
     return f"data:image/png;base64,{b64}"
 
 def chat_respond(
@@ -140,8 +139,8 @@ def chat_respond(
     history: list,
     system_prompt: str,
     enable_thinking: bool,
-    chat_model: str = CHAT_GEMMA_DEFAULT,
-    max_new_tokens: int = CHAT_MAX_TOKENS,
+    chat_model: str | None = None,
+    max_new_tokens: int | None = None,
 ):
     """Process a user chat turn and return updated history.
 
@@ -151,7 +150,9 @@ def chat_respond(
     if not user_msg and image is None and audio is None:
         raise UserInputError("Send a message, image, or audio clip.")
 
-    system = (system_prompt or _CHAT_SYSTEM).strip()
+    chat_model = chat_model or _runtime().CHAT_GEMMA_DEFAULT
+    max_new_tokens = max_new_tokens or _runtime().CHAT_MAX_TOKENS
+    system = (system_prompt or _runtime()._CHAT_SYSTEM).strip()
     history = list(history or [])
 
     # Rebuild LLM messages from Gradio history
@@ -164,7 +165,7 @@ def chat_respond(
     display_parts = []
 
     if image is not None:
-        tmp_path = save_chat_attachment(image, "chat_img")
+        tmp_path = _runtime().save_chat_attachment(image, "chat_img")
         content_parts.append({"type": "image", "url": tmp_path})
         display_parts.append("[image attached]")
 
@@ -185,19 +186,19 @@ def chat_respond(
 
     # Generate
     try:
-        max_new_tokens = int(max_new_tokens or CHAT_MAX_TOKENS)
+        max_new_tokens = int(max_new_tokens or _runtime().CHAT_MAX_TOKENS)
     except (TypeError, ValueError):
-        max_new_tokens = CHAT_MAX_TOKENS
-    max_new_tokens = max(CHAT_MIN_TOKENS, min(CHAT_MAX_TOKEN_LIMIT, max_new_tokens))
+        max_new_tokens = _runtime().CHAT_MAX_TOKENS
+    max_new_tokens = max(_runtime().CHAT_MIN_TOKENS, min(_runtime().CHAT_MAX_TOKEN_LIMIT, max_new_tokens))
 
-    t0 = time.time()
-    reply = _chat_gemma_generate(
+    t0 = _runtime().time.time()
+    reply = _runtime()._chat_gemma_generate(
         llm_messages,
         chat_model=chat_model,
         max_new_tokens=max_new_tokens,
         enable_thinking=enable_thinking,
     )
-    elapsed = time.time() - t0
+    elapsed = _runtime().time.time() - t0
     reply = reply.strip()
     reply += f"\n\n*({elapsed:.1f}s)*"
 
@@ -207,9 +208,9 @@ def chat_respond(
 
 def _clean_cli_output(text: str | None) -> str:
     text = text or ""
-    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text).strip()
+    return _runtime().re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text).strip()
 
-def _format_pi_result(completed: subprocess.CompletedProcess) -> str:
+def _format_pi_result(completed: _runtime().subprocess.CompletedProcess) -> str:
     stdout = _clean_cli_output(completed.stdout)
     stderr = _clean_cli_output(completed.stderr)
     if completed.returncode == 0:
@@ -231,8 +232,8 @@ def pi_respond(user_msg: str, history: list):
     history = list(history or [])
     history.append({"role": "user", "content": prompt})
 
-    pi_bin = shutil.which("pi")
-    t0 = time.time()
+    pi_bin = _runtime().shutil.which("pi")
+    t0 = _runtime().time.time()
     if not pi_bin:
         reply = (
             "Pi command not found on PATH. Install it with the quick-start "
@@ -240,15 +241,15 @@ def pi_respond(user_msg: str, history: list):
         )
     else:
         try:
-            pi_model = APP_CONFIG.pi_model
+            pi_model = _runtime().APP_CONFIG.pi_model
             command = [pi_bin]
             if pi_model:
                 command.extend(["--model", pi_model])
             command.extend(["-p", prompt])
-            completed = subprocess.run(
+            completed = _runtime().subprocess.run(
                 command,
-                cwd=BASE_DIR,
-                stdin=subprocess.DEVNULL,
+                cwd=_runtime().BASE_DIR,
+                stdin=_runtime().subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -262,10 +263,10 @@ def pi_respond(user_msg: str, history: list):
                 "Node/npm/Pi setup block, then restart this WebUI shell."
             )
         except Exception as e:
-            log.exception("Pi chat command failed")
+            _runtime().log.exception("Pi chat command failed")
             reply = f"Pi command failed: {e}"
 
-    elapsed = time.time() - t0
+    elapsed = _runtime().time.time() - t0
     reply = reply.strip() + f"\n\n*Pi ({elapsed:.1f}s)*"
     history.append({"role": "assistant", "content": reply})
     return history, "", None, None
@@ -288,4 +289,3 @@ __all__ = (
     'pi_respond',
     'chat_clear',
 )
-_seal_runtime_module(globals())

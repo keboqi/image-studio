@@ -1,6 +1,8 @@
 import importlib
+import re
 import sys
 import types
+from pathlib import Path
 
 
 class Dummy:
@@ -64,12 +66,19 @@ def _install_runtime_stubs(monkeypatch):
     z_image = _module("diffusers.pipelines.z_image")
     pipeline_z_image = _module("diffusers.pipelines.z_image.pipeline_z_image")
     pipeline_z_image.ZImagePipeline = type("ZImagePipeline", (), {})
+    pil = _module("PIL")
+    pil_image = _module("PIL.Image")
+    pil_image.Image = type("Image", (), {})
+    pil.Image = pil_image
 
     stubs = {
         "gradio": gradio,
         "torch": torch,
         "torch.nn": torch.nn,
+        "numpy": _module("numpy"),
         "cv2": _module("cv2"),
+        "PIL": pil,
+        "PIL.Image": pil_image,
         "diffusers": diffusers,
         "diffusers.pipelines": pipelines,
         "diffusers.pipelines.z_image": z_image,
@@ -79,19 +88,34 @@ def _install_runtime_stubs(monkeypatch):
         monkeypatch.setitem(sys.modules, name, module)
 
 
-def test_application_imports_and_exports_extracted_runtime(monkeypatch):
+def test_application_import_is_lightweight_and_runtime_remains_compatible(monkeypatch):
+    sys.modules.pop("image_studio.app", None)
+    sys.modules.pop("image_studio.composition", None)
+    sys.modules.pop("image_studio.runtime", None)
+    app = importlib.import_module("image_studio.app")
+    assert "image_studio.runtime" not in sys.modules
+
     _install_runtime_stubs(monkeypatch)
     monkeypatch.setenv("IMAGE_STUDIO_NO_BOOTSTRAP", "1")
-    sys.modules.pop("image_studio.app", None)
-    app = importlib.import_module("image_studio.app")
+    application = app.create_application()
+    runtime = application.runtime
     assert callable(app.build_ui)
-    assert callable(app.run_generate)
+    assert callable(runtime.run_generate)
     assert callable(app.attach_app_routes)
-    assert app.GenerationRequest.field_names()[0] == "mode"
-    assert len(app._RUNTIME_MODULES) >= 30
+    assert runtime.GenerationRequest.field_names()[0] == "mode"
     assert app.build_ui() is not None
 
-    values = dict.fromkeys(app.GenerationRequest.field_names(), 0)
+    package_dir = Path(runtime.__file__).parent
+    referenced_names = {
+        name
+        for path in package_dir.rglob("*.py")
+        if path.name not in {"runtime.py", "runtime_access.py"}
+        for name in re.findall(r"_runtime\(\)\.([A-Za-z_][A-Za-z0-9_]*)", path.read_text(encoding="utf-8"))
+    }
+    missing_names = sorted(name for name in referenced_names if not hasattr(runtime, name))
+    assert missing_names == []
+
+    values = dict.fromkeys(runtime.GenerationRequest.field_names(), 0)
     values.update(
         mode="Qwen Image",
         prompt="a cat",
@@ -117,10 +141,10 @@ def test_application_imports_and_exports_extracted_runtime(monkeypatch):
         )
         return "routed"
 
-    monkeypatch.setattr(app.IMAGE_MODEL_EXECUTOR, "execute", execute)
-    request = app.GenerationRequest.from_mapping(values)
-    assert app._run_generation_request(request, progress="p") == "routed"
-    assert captured["model_id"] == "Qwen Image"
+    monkeypatch.setattr(runtime.IMAGE_MODEL_EXECUTOR, "execute", execute)
+    request = runtime.GenerationRequest.from_mapping(values)
+    assert runtime._run_generation_request(request, progress="p") == "routed"
+    assert captured["model_id"] == "qwen-image"
     assert captured["operation"] == "image.generate"
     assert captured["parameters"]["prompt"] == "a cat"
     assert captured["parameters"]["pid_steps"] == 4

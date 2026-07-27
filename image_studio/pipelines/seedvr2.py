@@ -1,18 +1,18 @@
 """Extracted runtime implementation."""
 
 from __future__ import annotations
+
+# --- extracted runtime implementation ---
+from dataclasses import dataclass
+from typing import Any
+
+from PIL import Image
+
 from image_studio.errors import UserInputError
 from image_studio.infra.lazy_modules import LazyModuleGroup
 from image_studio.progress import NO_PROGRESS
+from image_studio.runtime_access import runtime_namespace as _runtime
 
-# --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
-
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
 
 class SeedVR2Runner:
     """Own SeedVR2 imports, model cache, and currently loaded model."""
@@ -26,7 +26,7 @@ class SeedVR2Runner:
 
 def _ensure_seedvr2():
     """Clone the SeedVR2 repo if not present and install its dependencies."""
-    return _git_bootstrap.ensure(SEEDVR2_REPO_SPEC)
+    return _runtime()._git_bootstrap.ensure(_runtime().SEEDVR2_REPO_SPEC)
 
 def is_seedvr2_available() -> bool:
     """Return whether SeedVR2 can be imported, bootstrapping it lazily once."""
@@ -39,36 +39,38 @@ def _import_seedvr2():
     if not is_seedvr2_available():
         raise UserInputError(
             "SeedVR2 upscaler is unavailable. Check git/network access "
-            f"or clone {SEEDVR2_REPO} into {SEEDVR2_DIR}."
+            f"or clone {_runtime().SEEDVR2_REPO} into {_runtime().SEEDVR2_DIR}."
         )
-    if SEEDVR2_DIR not in sys.path:
-        sys.path.insert(0, SEEDVR2_DIR)
+    if _runtime().SEEDVR2_DIR not in _runtime().sys.path:
+        _runtime().sys.path.insert(0, _runtime().SEEDVR2_DIR)
 
-    from src.utils.downloads import download_weight
-    from src.utils.model_registry import (
-        get_available_dit_models,
-        DEFAULT_DIT,
-        DEFAULT_VAE,
+    from src.core.generation_phases import (
+        decode_all_batches,
+        encode_all_batches,
+        postprocess_all_batches,
+        upscale_all_batches,
     )
-    from src.utils.constants import SEEDVR2_FOLDER_NAME
     from src.core.generation_utils import (
-        setup_generation_context,
-        prepare_runner,
         compute_generation_info,
-        log_generation_start,
         load_text_embeddings,
+        log_generation_start,
+        prepare_runner,
+        setup_generation_context,
+    )
+    from src.core.generation_utils import (
         script_directory as seedvr2_script_dir,
     )
-    from src.core.generation_phases import (
-        encode_all_batches,
-        upscale_all_batches,
-        decode_all_batches,
-        postprocess_all_batches,
-    )
-    from src.utils.debug import Debug as SeedVR2Debug
     from src.optimization.memory_manager import (
         clear_memory,
         get_gpu_backend,
+    )
+    from src.utils.constants import SEEDVR2_FOLDER_NAME
+    from src.utils.debug import Debug as SeedVR2Debug
+    from src.utils.downloads import download_weight
+    from src.utils.model_registry import (
+        DEFAULT_DIT,
+        DEFAULT_VAE,
+        get_available_dit_models,
     )
 
     return {
@@ -121,12 +123,12 @@ class SeedVR2DevicePlan:
     vae_offload: str | None
     tensor_offload: str | None
 
-def _prepare_seedvr2_source_image(image) -> tuple[np.ndarray, torch.Tensor]:
+def _prepare_seedvr2_source_image(image) -> tuple[Any, Any]:
     if image is None:
         raise UserInputError("Please upload an image to upscale.")
-    img = coerce_rgb_image(image)
-    img_np = np.array(img, dtype=np.float32) / 255.0
-    image_tensor = torch.from_numpy(img_np[None, ...]).to(torch.float16)
+    img = _runtime().coerce_rgb_image(image)
+    img_np = _runtime().np.array(img, dtype=_runtime().np.float32) / 255.0
+    image_tensor = _runtime().torch.from_numpy(img_np[None, ...]).to(_runtime().torch.float16)
     return img_np, image_tensor
 
 def _resolve_video_path(video: Any) -> str | None:
@@ -152,44 +154,44 @@ def _require_seedvr2_video_path(video: Any) -> str:
     path = _resolve_video_path(video)
     if not path:
         raise UserInputError("No video available to upscale.")
-    if not os.path.isfile(path):
+    if not _runtime().os.path.isfile(path):
         raise UserInputError(f"Video file not found: {path}")
-    if not path.lower().endswith(SEEDVR2_VIDEO_EXTENSIONS):
+    if not path.lower().endswith(_runtime().SEEDVR2_VIDEO_EXTENSIONS):
         raise UserInputError("Please provide a supported video file.")
     return path
 
-def _read_seedvr2_video_frames(cap, max_frames: int) -> torch.Tensor | None:
+def _read_seedvr2_video_frames(cap, max_frames: int) -> Any | None:
     frames = []
     for _ in range(max_frames):
         ret, frame = cap.read()
         if not ret:
             break
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        frame = _runtime().cv2.cvtColor(frame, _runtime().cv2.COLOR_BGR2RGB).astype(_runtime().np.float32) / 255.0
         frames.append(frame)
     if not frames:
         return None
-    return torch.from_numpy(np.stack(frames)).to(torch.float32)
+    return _runtime().torch.from_numpy(_runtime().np.stack(frames)).to(_runtime().torch.float32)
 
 def _open_seedvr2_video(video_path: str):
-    cap = cv2.VideoCapture(video_path)
+    cap = _runtime().cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise UserInputError(f"Cannot open video file: {video_path}")
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    fps = cap.get(_runtime().cv2.CAP_PROP_FPS) or 30.0
+    total_frames = int(cap.get(_runtime().cv2.CAP_PROP_FRAME_COUNT) or 0)
+    width = int(cap.get(_runtime().cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    height = int(cap.get(_runtime().cv2.CAP_PROP_FRAME_HEIGHT) or 0)
     if width <= 0 or height <= 0:
         cap.release()
         raise UserInputError("Could not read video dimensions.")
     return cap, fps, total_frames, width, height
 
 def _seedvr2_video_output_path(source_path: str) -> str:
-    stem = os.path.splitext(os.path.basename(source_path))[0]
-    safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("._") or "video"
-    return os.path.join(OUTPUT_DIR, f"video_upscale_{safe_stem}_{datetime.now():%Y%m%d_%H%M%S}.mp4")
+    stem = _runtime().os.path.splitext(_runtime().os.path.basename(source_path))[0]
+    safe_stem = _runtime().re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("._") or "video"
+    return _runtime().os.path.join(_runtime().OUTPUT_DIR, f"video_upscale_{safe_stem}_{_runtime().datetime.now():%Y%m%d_%H%M%S}.mp4")
 
 def _ensure_seedvr2_weight(s: dict, dit_model: str) -> str:
-    model_dir = os.path.join(SEEDVR2_DIR, "models", s["SEEDVR2_FOLDER_NAME"])
+    model_dir = _runtime().os.path.join(_runtime().SEEDVR2_DIR, "models", s["SEEDVR2_FOLDER_NAME"])
     if not s["download_weight"](
         dit_model=dit_model, vae_model=s["DEFAULT_VAE"], model_dir=model_dir, debug=s["debug"]
     ):
@@ -199,7 +201,7 @@ def _ensure_seedvr2_weight(s: dict, dit_model: str) -> str:
 def _clear_seedvr2_cache_on_model_change(s: dict, dit_model: str):
     if _seedvr2_state.loaded_model is None or _seedvr2_state.loaded_model == dit_model:
         return
-    log.info("SeedVR2 model changed; clearing cache")
+    _runtime().log.info("SeedVR2 model changed; clearing cache")
     _seedvr2_state.cache = {}
     s["clear_memory"](debug=s["debug"], deep=True, force=True)
     _seedvr2_state.loaded_model = None
@@ -291,8 +293,8 @@ def _prepare_seedvr2_runner(
     if cache_models:
         _seedvr2_state.cache["runner"] = runner
         _seedvr2_state.loaded_model = dit_model
-        model_mgr.register(
-            MODEL_SEEDVR2, runner, MODEL_SPECS[MODEL_SEEDVR2].vram_mb,
+        _runtime().model_mgr.register(
+            _runtime().MODEL_SEEDVR2, runner, _runtime().MODEL_SPECS[_runtime().MODEL_SEEDVR2].vram_mb,
             unload_fn=lambda: _evict_seedvr2(),
         )
     return runner
@@ -301,7 +303,7 @@ def _run_seedvr2_phases(
     s: dict,
     runner,
     ctx: dict,
-    image_tensor: torch.Tensor,
+    image_tensor: Any,
     resolution: int,
     max_resolution: int,
     seed: int,
@@ -327,7 +329,7 @@ def _run_seedvr2_phases(
     )
     s["log_generation_start"](gen_info, s["debug"])
 
-    t0 = time.time()
+    t0 = _runtime().time.time()
     ctx = s["encode_all_batches"](
         runner, ctx=ctx, images=image_tensor, debug=s["debug"],
         batch_size=batch_size, uniform_batch_size=uniform_batch_size, seed=seed,
@@ -348,23 +350,23 @@ def _run_seedvr2_phases(
         color_correction=color_correction, prepend_frames=prepend_frames,
         temporal_overlap=temporal_overlap, batch_size=batch_size,
     )
-    return ctx, time.time() - t0
+    return ctx, _runtime().time.time() - t0
 
-def _seedvr2_result_to_frames(ctx: dict) -> np.ndarray:
+def _seedvr2_result_to_frames(ctx: dict) -> Any:
     result_tensor = ctx["final_video"]
     if result_tensor.device.type != "cpu":
         result_tensor = result_tensor.cpu()
-    if result_tensor.dtype in (torch.bfloat16, torch.float8_e4m3fn, torch.float8_e5m2):
-        result_tensor = result_tensor.to(torch.float32)
-    return (result_tensor.numpy() * 255.0).clip(0, 255).astype(np.uint8)
+    if result_tensor.dtype in (_runtime().torch.bfloat16, _runtime().torch.float8_e4m3fn, _runtime().torch.float8_e5m2):
+        result_tensor = result_tensor.to(_runtime().torch.float32)
+    return (result_tensor.numpy() * 255.0).clip(0, 255).astype(_runtime().np.uint8)
 
-def _seedvr2_result_to_image(ctx: dict) -> tuple[Image.Image, np.ndarray]:
+def _seedvr2_result_to_image(ctx: dict) -> tuple[Image.Image, Any]:
     frames_uint8 = _seedvr2_result_to_frames(ctx)
     frame_uint8 = frames_uint8[0]
-    return Image.fromarray(frame_uint8), frame_uint8
+    return _runtime().Image.fromarray(frame_uint8), frame_uint8
 
 def _write_seedvr2_video_frames(
-    frames_uint8: np.ndarray,
+    frames_uint8: Any,
     output_path: str,
     fps: float,
     writer=None,
@@ -372,17 +374,17 @@ def _write_seedvr2_video_frames(
     if frames_uint8.size == 0:
         return writer
     if writer is None:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        _runtime().os.makedirs(_runtime().os.path.dirname(output_path), exist_ok=True)
         height, width = frames_uint8.shape[1], frames_uint8.shape[2]
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        writer = cv2.VideoWriter(output_path, fourcc, float(fps), (width, height))
+        fourcc = _runtime().cv2.VideoWriter_fourcc(*"mp4v")
+        writer = _runtime().cv2.VideoWriter(output_path, fourcc, float(fps), (width, height))
         if not writer.isOpened():
             raise UserInputError(f"Cannot create video writer for: {output_path}")
     for frame in frames_uint8:
         if frame.shape[-1] == 4:
-            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+            frame_bgr = _runtime().cv2.cvtColor(frame, _runtime().cv2.COLOR_RGBA2BGR)
         else:
-            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            frame_bgr = _runtime().cv2.cvtColor(frame, _runtime().cv2.COLOR_RGB2BGR)
         writer.write(frame_bgr)
     return writer
 
@@ -399,9 +401,9 @@ def run_upscale(
     progress=NO_PROGRESS,
 ):
     """Upscale a single image via the SeedVR2 4-phase pipeline (runs locally)."""
-    seed = normalize_seed(seed)
+    seed = _runtime().normalize_seed(seed)
     progress(0.1, desc="Ensuring VRAM...")
-    model_mgr.ensure_vram(MODEL_SPECS[MODEL_SEEDVR2].vram_mb, exclude=MODEL_SEEDVR2)
+    _runtime().model_mgr.ensure_vram(_runtime().MODEL_SPECS[_runtime().MODEL_SEEDVR2].vram_mb, exclude=_runtime().MODEL_SEEDVR2)
 
     progress(0.2, desc="Loading ModelManager...")
     s = _get_seedvr2()
@@ -426,11 +428,11 @@ def run_upscale(
         seed, color_correction, cache_models,
     )
     result_pil, frame_uint8 = _seedvr2_result_to_image(ctx)
-    preview_path, raw_path = save_output_image_pair("upscale", result_pil)
+    preview_path, raw_path = _runtime().save_output_image_pair("upscale", result_pil)
 
     in_h, in_w = img_np.shape[:2]
     out_h, out_w = frame_uint8.shape[:2]
-    status = ok_status(
+    status = _runtime().ok_status(
         elapsed,
         f"{in_w}x{in_h} -> {out_w}x{out_h}",
         f"model ...{dit_model[-30:]}",
@@ -468,7 +470,7 @@ def run_video_upscale(
 ):
     """Upscale a video through SeedVR2, streaming frame chunks into a new MP4."""
     video_path = _require_seedvr2_video_path(video)
-    seed = normalize_seed(seed)
+    seed = _runtime().normalize_seed(seed)
     resolution = int(resolution)
     max_resolution = int(max_resolution)
     blocks_to_swap = int(blocks_to_swap)
@@ -485,10 +487,10 @@ def run_video_upscale(
         raise UserInputError("Could not read the video frame count.")
     frames_to_process = total_frames
     chunk_size = chunk_size or frames_to_process
-    total_chunks = max(1, math.ceil(frames_to_process / chunk_size))
+    total_chunks = max(1, _runtime().math.ceil(frames_to_process / chunk_size))
 
     progress(0.1, desc="Ensuring VRAM...")
-    model_mgr.ensure_vram(MODEL_SPECS[MODEL_SEEDVR2].vram_mb, exclude=MODEL_SEEDVR2)
+    _runtime().model_mgr.ensure_vram(_runtime().MODEL_SPECS[_runtime().MODEL_SEEDVR2].vram_mb, exclude=_runtime().MODEL_SEEDVR2)
 
     progress(0.15, desc="Loading SeedVR2...")
     s = _get_seedvr2()
@@ -504,7 +506,7 @@ def run_video_upscale(
     chunk_idx = 0
     prev_raw_tail = None
     first_output_shape = None
-    t0 = time.time()
+    t0 = _runtime().time.time()
 
     try:
         while frames_read < frames_to_process:
@@ -518,7 +520,7 @@ def run_video_upscale(
 
             if prev_raw_tail is not None and temporal_overlap > 0:
                 context_count = min(temporal_overlap, int(prev_raw_tail.shape[0]))
-                chunk_tensor = torch.cat([prev_raw_tail[-context_count:], new_frames], dim=0)
+                chunk_tensor = _runtime().torch.cat([prev_raw_tail[-context_count:], new_frames], dim=0)
             else:
                 context_count = 0
                 chunk_tensor = new_frames
@@ -558,7 +560,7 @@ def run_video_upscale(
                 )
 
             ctx, _chunk_elapsed = _run_seedvr2_phases(
-                s, runner, ctx, chunk_tensor.to(torch.float16),
+                s, runner, ctx, chunk_tensor.to(_runtime().torch.float16),
                 resolution, max_resolution, seed,
                 color_correction, cache_models,
                 batch_size=batch_size,
@@ -588,13 +590,13 @@ def run_video_upscale(
         if writer is not None:
             writer.release()
 
-    if frames_written <= 0 or not os.path.isfile(output_path):
+    if frames_written <= 0 or not _runtime().os.path.isfile(output_path):
         raise UserInputError("Video upscale produced no frames.")
 
-    elapsed = time.time() - t0
+    elapsed = _runtime().time.time() - t0
     out_h, out_w = first_output_shape if first_output_shape else (0, 0)
     progress(1.0, desc="Done")
-    status = ok_status(
+    status = _runtime().ok_status(
         elapsed,
         f"{frames_written} frames",
         f"{in_w}x{in_h} -> {out_w}x{out_h}",
@@ -612,7 +614,7 @@ def _evict_seedvr2():
     _seedvr2_state.cache = {}
     _seedvr2_state.loaded_model = None
     s["clear_memory"](debug=s["debug"], deep=True, force=True)
-    log.info("SeedVR2 upscaler evicted.")
+    _runtime().log.info("SeedVR2 upscaler evicted.")
 
 __all__ = (
     'SeedVR2Runner',
@@ -642,4 +644,3 @@ __all__ = (
     'run_video_upscale',
     '_evict_seedvr2',
 )
-_seal_runtime_module(globals())

@@ -1,16 +1,14 @@
 """Extracted runtime implementation."""
 
 from __future__ import annotations
-from image_studio.ui.components.base import ComponentSet
 
 # --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+from dataclasses import dataclass
+from typing import Any
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
+from image_studio.runtime_access import runtime_namespace as _runtime
+from image_studio.ui.components.base import ComponentSet
+
 
 @dataclass
 class ChatTab(ComponentSet):
@@ -27,9 +25,9 @@ class ChatTab(ComponentSet):
     clear: Any
 
 
-def _build_chat_tab() -> dict[str, Any]:
-    with gr.Tab("Chat", id=TAB_CHAT):
-        gr.Markdown(
+def _build_chat_tab() -> ChatTab:
+    with _runtime().gr.Tab("Chat", id=_runtime().TAB_CHAT):
+        _runtime().gr.Markdown(
             "Chat with **Gemma 4** models - supports "
             "**text**, **image**, and **audio** input (max 30s).  \n"
             "DiffusionGemma vLLM supports text and image input, but not audio, and starts through `deploy_diffusiongemma_vllm.sh` on first use.  \n"
@@ -37,46 +35,46 @@ def _build_chat_tab() -> dict[str, Any]:
             "[Huihui NVFP4](https://huggingface.co/sakamakismile/Huihui-gemma-4-12B-it-abliterated-NVFP4A16) "
             "variant, or the managed DiffusionGemma vLLM backend. Enhance Prompt and Gemma upsampling will reuse whichever model you select here."
         )
-        with gr.Row(equal_height=False):
-            with gr.Column(scale=7):
-                chat_box = gr.Chatbot(label="", elem_id="chat-box", height=480)
-                with gr.Row():
-                    chat_msg = gr.Textbox(
+        with _runtime().gr.Row(equal_height=False):
+            with _runtime().gr.Column(scale=7):
+                chat_box = _runtime().gr.Chatbot(label="", elem_id="chat-box", height=480)
+                with _runtime().gr.Row():
+                    chat_msg = _runtime().gr.Textbox(
                         label="Message", lines=2,
                         placeholder="Type your message...",
                         scale=6, show_label=False,
                     )
-                    chat_send = gr.Button(
+                    chat_send = _runtime().gr.Button(
                         "Send", variant="primary",
                         elem_id="chat-send-btn", scale=1,
                         min_width=100,
                     )
-                    chat_pi = gr.Button(
+                    chat_pi = _runtime().gr.Button(
                         "pi",
                         elem_id="chat-pi-btn", scale=1,
                         min_width=80,
                     )
-                with gr.Accordion("Attachments (Image / Audio)", open=False):
-                    with gr.Row():
-                        chat_img = gr.Image(label="Attach Image", type="pil", scale=1)
-                        chat_audio = gr.Audio(label="Attach Audio (max 30s)", type="filepath", scale=1)
-            with gr.Column(scale=3):
-                chat_model = gr.Dropdown(
-                    choices=list(CHAT_GEMMA_CHOICES.values()),
-                    value=CHAT_GEMMA_CHOICES[CHAT_GEMMA_DEFAULT],
+                with _runtime().gr.Accordion("Attachments (Image / Audio)", open=False):
+                    with _runtime().gr.Row():
+                        chat_img = _runtime().gr.Image(label="Attach Image", type="pil", scale=1)
+                        chat_audio = _runtime().gr.Audio(label="Attach Audio (max 30s)", type="filepath", scale=1)
+            with _runtime().gr.Column(scale=3):
+                chat_model = _runtime().gr.Dropdown(
+                    choices=list(_runtime().CHAT_GEMMA_CHOICES.values()),
+                    value=_runtime().CHAT_GEMMA_CHOICES[_runtime().CHAT_GEMMA_DEFAULT],
                     label="Chat Model",
                 )
-                chat_system = gr.Textbox(label="System Prompt", lines=4, value=_CHAT_SYSTEM)
-                chat_thinking = gr.Checkbox(False, label="Enable Thinking Mode")
-                chat_max_tokens = gr.Slider(
-                    CHAT_MIN_TOKENS,
-                    CHAT_MAX_TOKEN_LIMIT,
-                    CHAT_MAX_TOKENS,
+                chat_system = _runtime().gr.Textbox(label="System Prompt", lines=4, value=_runtime()._CHAT_SYSTEM)
+                chat_thinking = _runtime().gr.Checkbox(False, label="Enable Thinking Mode")
+                chat_max_tokens = _runtime().gr.Slider(
+                    _runtime().CHAT_MIN_TOKENS,
+                    _runtime().CHAT_MAX_TOKEN_LIMIT,
+                    _runtime().CHAT_MAX_TOKENS,
                     step=64,
                     label="Max Output Tokens",
                 )
-                chat_clear_btn = gr.Button("Clear Chat", size="sm", variant="stop")
-                gr.Markdown(
+                chat_clear_btn = _runtime().gr.Button("Clear Chat", size="sm", variant="stop")
+                _runtime().gr.Markdown(
                     "---\n"
                     "**Tips:**\n"
                     "- Place images/audio **before** your question\n"
@@ -101,4 +99,3 @@ def _build_chat_tab() -> dict[str, Any]:
 __all__ = (
     '_build_chat_tab',
 )
-_seal_runtime_module(globals())

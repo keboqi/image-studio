@@ -1,17 +1,32 @@
-"""Extracted runtime implementation."""
+"""Gradio layout composition from explicit application dependencies."""
 
 from __future__ import annotations
 
-# --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+from pathlib import Path
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
+import gradio as gr
 
-def _build_header():
+from image_studio.context import AppContext
+from image_studio.generators.dispatch import _get_seedvr2_model_options
+from image_studio.web.designer import attach_ideogram_json_designer_route
+
+from .components.ai_remover import _build_ai_remover_tab
+from .components.chat import _build_chat_tab
+from .components.edit import _build_edit_tab
+from .components.gallery import _build_gallery_tab
+from .components.generate import _build_generate_tab
+from .components.models import _build_models_tab
+from .components.upscale import _build_upscale_tab
+from .components.video import _build_video_tab
+from .wiring import _wire_events
+
+API_DOCS = (Path(__file__).parents[1] / "docs" / "api.md").read_text(encoding="utf-8")
+GEMMA_MODEL_URL = "https://huggingface.co/google/gemma-4-12B-it"
+
+
+def _build_header(context: AppContext):
+    if context.ui_actions is None:
+        raise RuntimeError("UI actions are not configured.")
     with gr.Row(elem_id="header-row"):
         with gr.Column(scale=8):
             gr.Markdown(
@@ -25,14 +40,19 @@ def _build_header():
                 "- 4-step Qwen Image, FP4 rank-128."
             )
         with gr.Column(scale=2, min_width=200):
-            vram_widget = gr.Markdown(_build_vram_widget_md(), elem_id="header-vram-widget")
-    return vram_widget
+            widget = gr.Markdown(
+                context.ui_actions.vram_markdown(),
+                elem_id="header-vram-widget",
+            )
+    return widget
 
-def _build_api_tab():
+
+def _build_api_tab() -> None:
     with gr.Tab("API"):
         gr.Markdown(API_DOCS)
 
-def _build_footer():
+
+def _build_footer() -> None:
     gr.Markdown(
         "Powered by FP4 Engine | Qwen Image | "
         "[**Boogu-Image**](https://github.com/boogu-project/Boogu-Image) | "
@@ -44,31 +64,44 @@ def _build_footer():
         elem_id="footer",
     )
 
-def build_ui(context=None):
-    """Build the UI from an explicit AppContext (legacy globals remain bridged)."""
-    context = context or APP_CONTEXT
+
+def build_ui(context: AppContext):
+    """Build the UI from a fully composed ``AppContext``."""
+    if context.ui_actions is None:
+        raise RuntimeError("UI actions are not configured.")
     seedvr2_models, seedvr2_default, seedvr2_available = _get_seedvr2_model_options()
     with gr.Blocks(title="Image Studio WebUI") as app:
-        vram_widget = _build_header()
+        vram_widget = _build_header(context)
         with gr.Tabs() as tabs:
-            gen = _build_generate_tab()
+            generate = _build_generate_tab()
             edit = _build_edit_tab()
-            upscale = _build_upscale_tab(seedvr2_models, seedvr2_default, seedvr2_available)
-            ai_remover = _build_ai_remover_tab()
+            upscale = _build_upscale_tab(
+                seedvr2_models,
+                seedvr2_default,
+                seedvr2_available,
+            )
+            remover = _build_ai_remover_tab()
             chat = _build_chat_tab()
             gallery = _build_gallery_tab()
             models = _build_models_tab()
             video = _build_video_tab()
             _build_api_tab()
-        _wire_events(tabs, gen, edit, upscale, ai_remover, chat, gallery, models, video, vram_widget)
+        _wire_events(
+            tabs,
+            generate,
+            edit,
+            upscale,
+            remover,
+            chat,
+            gallery,
+            models,
+            video,
+            vram_widget,
+            context.ui_actions,
+        )
         attach_ideogram_json_designer_route(app)
         _build_footer()
     return app
 
-__all__ = (
-    '_build_header',
-    '_build_api_tab',
-    '_build_footer',
-    'build_ui',
-)
-_seal_runtime_module(globals())
+
+__all__ = ("build_ui",)

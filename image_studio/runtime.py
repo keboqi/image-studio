@@ -3,64 +3,60 @@
 See ``scripts/quickstart.sh`` for installation and launch instructions.
 """
 
+import atexit
 import base64
 import contextlib
+import gc
 import hashlib
-import io
 import importlib
+import io
 import json
 import math
 import os
 import re
-import sys
-import subprocess
 import shutil
+import subprocess
+import sys
 import tempfile
-import time
-import logging
-import gc
 import threading
-import atexit
-import urllib.request
-import urllib.error
-import urllib.parse
-from pathlib import Path
-from dataclasses import dataclass
+import time
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable, Optional
+from pathlib import Path
+from typing import Any
 
 from image_studio.config import AppConfig
+from image_studio.context import AppContext
 from image_studio.core.backends import BackendRegistry, CallableBackend
 from image_studio.core.executor import ModelExecutor
 from image_studio.core.models import Operation
+from image_studio.core.specs import HiDreamSpec, PIDCheckpointSpec
 from image_studio.errors import AppError, BackendUnavailableError, ModelLoadError, UserInputError
+from image_studio.generators.base import EditRequest, GenerationRequest, UIRequest
 from image_studio.infra.bootstrap import GitBootstrap, RepoSpec
 from image_studio.infra.model_manager import ManagedModelSpec, ModelManager
 from image_studio.infra.model_storage import ModelStorageCatalog, ModelStorageTarget
-from image_studio.generators.base import EditRequest, GenerationRequest, UIRequest
-from image_studio.generators.registry import RequestHandlerRegistry
-from image_studio.parsing import extract_json_object as pure_extract_json_object
-from image_studio.parsing import fix_unescaped_json_newlines, parse_enhance_json
-from image_studio.pipelines.ideogram.prompting import clean_malformed_json_caption, parse_caption
-from image_studio.pipelines.pid import patchify_flux2_raw_latents
-from image_studio.storage.output_store import OutputStore
-from image_studio.storage.output_store import OUTPUT_PREVIEW_QUALITY, OUTPUT_PREVIEW_SUFFIX
+from image_studio.integrations.image_models import ImageModelFunctions, build_image_model_registry
+from image_studio.logging_setup import configure_logging
+from image_studio.parsing import extract_json_object, fix_unescaped_json_newlines, parse_enhance_json
+from image_studio.runtime_access import export_public, install_runtime_namespace
 from image_studio.storage.metadata import JsonFileCache, PromptMetadataStore
+from image_studio.storage.output_store import OutputStore, configure_output_storage
+from image_studio.ui.actions import UiActions
+from image_studio.ui.theme import build_theme, load_css
 from image_studio.validation import (
-    snap_ltx_audio_video_frames,
     validate_boogu_dims as pure_validate_boogu_dims,
+)
+from image_studio.validation import (
     validate_dims as pure_validate_dims,
+)
+from image_studio.validation import (
     validate_ideogram_dims,
 )
-from image_studio.web.routes import PUBLIC_API_ENDPOINTS, promote_routes_before_fallback
-from image_studio.runtime_binding import export_module, rebind_modules
-from image_studio.ui.theme import build_theme, load_css
-from image_studio.logging_setup import configure_logging
-from image_studio.context import AppContext
-from image_studio.integrations.image_models import ImageModelFunctions, build_image_model_registry
-
-_RUNTIME_MODULES = []
-
+from image_studio.web.routes import (
+    WebRouteDependencies,
+    configure_app_routes,
+)
 
 def check_dependencies():
     missing = []
@@ -75,14 +71,19 @@ def check_dependencies():
 
 check_dependencies()
 
-import torch
-import numpy as np
 import gradio as gr
 import cv2
-from PIL import Image
-from diffusers import FlowMatchEulerDiscreteScheduler, QwenImagePipeline, QwenImageEditPlusPipeline
+import numpy as np
+import torch
+from diffusers import FlowMatchEulerDiscreteScheduler, QwenImageEditPlusPipeline, QwenImagePipeline
 from diffusers.pipelines.z_image.pipeline_z_image import ZImagePipeline
-from image_studio.services.ltx_video import LtxVideoService
+from PIL import Image
+
+from image_studio.services.ltx_video import (
+    LtxVideoService,
+    LtxWorkflow,
+    configure_ltx_workflow,
+)
 
 _NUNCHAKU_IMPORT_ERROR: Exception | None = None
 try:
@@ -275,29 +276,6 @@ IDEOGRAM4_PROMPT_METADATA_SCHEMA_VERSION = 1
 IDEOGRAM4_PROMPT_METADATA_SUFFIX = ".ideogram4_prompt.json"
 
 
-@dataclass(frozen=True)
-class HiDreamSpec:
-    model_id: str
-    label: str
-    short_label: str
-    steps: int
-    guidance_scale: float
-    shift: float
-    scheduler_name: str
-    use_default_timesteps: bool
-    noise_scale_start: float
-    noise_scale_end: float
-    noise_clip_std: float
-
-
-@dataclass(frozen=True)
-class PIDCheckpointSpec:
-    registry_key: str
-    experiment: str
-    relative_checkpoint_path: str
-    label: str
-
-
 _git_bootstrap = GitBootstrap(_bootstrap_allowed)
 
 
@@ -458,9 +436,10 @@ SEEDVR2_REPO_SPEC = RepoSpec(
 )
 
 
+install_runtime_namespace(sys.modules[__name__])
+
 _runtime_pipelines_seedvr2 = importlib.import_module('image_studio.pipelines.seedvr2')
-export_module(_runtime_pipelines_seedvr2, globals())
-_RUNTIME_MODULES.append(_runtime_pipelines_seedvr2)
+export_public(_runtime_pipelines_seedvr2, globals())
 
 
 
@@ -485,8 +464,7 @@ BOOGU_IMAGE_REPO_SPEC = RepoSpec(
 
 
 _runtime_pipelines_boogu = importlib.import_module('image_studio.pipelines.boogu')
-export_module(_runtime_pipelines_boogu, globals())
-_RUNTIME_MODULES.append(_runtime_pipelines_boogu)
+export_public(_runtime_pipelines_boogu, globals())
 
 
 
@@ -507,8 +485,7 @@ HIDREAM_O1_REPO_SPEC = RepoSpec(
 
 
 _runtime_pipelines_hidream = importlib.import_module('image_studio.pipelines.hidream')
-export_module(_runtime_pipelines_hidream, globals())
-_RUNTIME_MODULES.append(_runtime_pipelines_hidream)
+export_public(_runtime_pipelines_hidream, globals())
 
 
 
@@ -537,8 +514,7 @@ PID_REPO_SPEC = RepoSpec(
 
 
 _runtime_pipelines_pid = importlib.import_module('image_studio.pipelines.pid')
-export_module(_runtime_pipelines_pid, globals())
-_RUNTIME_MODULES.append(_runtime_pipelines_pid)
+export_public(_runtime_pipelines_pid, globals())
 
 
 
@@ -959,8 +935,7 @@ def _load_managed_model(
 
 
 _runtime_pipelines_qwen = importlib.import_module('image_studio.pipelines.qwen')
-export_module(_runtime_pipelines_qwen, globals())
-_RUNTIME_MODULES.append(_runtime_pipelines_qwen)
+export_public(_runtime_pipelines_qwen, globals())
 
 
 
@@ -994,8 +969,7 @@ def validate_boogu_dims(w: int | None, h: int | None) -> tuple[int, int]:
 
 
 _runtime_pipelines_ideogram_pipeline = importlib.import_module('image_studio.pipelines.ideogram.pipeline')
-export_module(_runtime_pipelines_ideogram_pipeline, globals())
-_RUNTIME_MODULES.append(_runtime_pipelines_ideogram_pipeline)
+export_public(_runtime_pipelines_ideogram_pipeline, globals())
 
 
 
@@ -1019,8 +993,7 @@ _RUNTIME_MODULES.append(_runtime_pipelines_ideogram_pipeline)
 
 
 _runtime_pipelines_ideogram_lora = importlib.import_module('image_studio.pipelines.ideogram.lora')
-export_module(_runtime_pipelines_ideogram_lora, globals())
-_RUNTIME_MODULES.append(_runtime_pipelines_ideogram_lora)
+export_public(_runtime_pipelines_ideogram_lora, globals())
 
 
 
@@ -1068,8 +1041,7 @@ _RUNTIME_MODULES.append(_runtime_pipelines_ideogram_lora)
 
 
 _runtime_pipelines_zimage = importlib.import_module('image_studio.pipelines.zimage')
-export_module(_runtime_pipelines_zimage, globals())
-_RUNTIME_MODULES.append(_runtime_pipelines_zimage)
+export_public(_runtime_pipelines_zimage, globals())
 
 
 
@@ -1138,8 +1110,7 @@ _ideogram4_prompt_metadata_store = PromptMetadataStore(
 
 
 _runtime_storage_output_store = importlib.import_module('image_studio.storage.output_store')
-export_module(_runtime_storage_output_store, globals())
-_RUNTIME_MODULES.append(_runtime_storage_output_store)
+export_public(_runtime_storage_output_store, globals())
 
 
 
@@ -1214,20 +1185,17 @@ def save_chat_attachment(image: Any, prefix: str) -> str:
 
 
 _runtime_generators_qwen = importlib.import_module('image_studio.generators.qwen')
-export_module(_runtime_generators_qwen, globals())
-_RUNTIME_MODULES.append(_runtime_generators_qwen)
+export_public(_runtime_generators_qwen, globals())
 
 
 
 
 _runtime_generators_boogu = importlib.import_module('image_studio.generators.boogu')
-export_module(_runtime_generators_boogu, globals())
-_RUNTIME_MODULES.append(_runtime_generators_boogu)
+export_public(_runtime_generators_boogu, globals())
 
 
 _runtime_generators_krea2 = importlib.import_module('image_studio.generators.krea2')
-export_module(_runtime_generators_krea2, globals())
-_RUNTIME_MODULES.append(_runtime_generators_krea2)
+export_public(_runtime_generators_krea2, globals())
 
 
 
@@ -1239,8 +1207,7 @@ _RUNTIME_MODULES.append(_runtime_generators_krea2)
 
 
 _runtime_generators_hidream = importlib.import_module('image_studio.generators.hidream')
-export_module(_runtime_generators_hidream, globals())
-_RUNTIME_MODULES.append(_runtime_generators_hidream)
+export_public(_runtime_generators_hidream, globals())
 
 
 
@@ -1256,8 +1223,7 @@ def validate_ideogram4_dims(w: int, h: int) -> tuple[int, int]:
 
 
 _runtime_generators_ideogram = importlib.import_module('image_studio.generators.ideogram')
-export_module(_runtime_generators_ideogram, globals())
-_RUNTIME_MODULES.append(_runtime_generators_ideogram)
+export_public(_runtime_generators_ideogram, globals())
 
 
 
@@ -1267,8 +1233,7 @@ _RUNTIME_MODULES.append(_runtime_generators_ideogram)
 
 
 _runtime_generators_zimage = importlib.import_module('image_studio.generators.zimage')
-export_module(_runtime_generators_zimage, globals())
-_RUNTIME_MODULES.append(_runtime_generators_zimage)
+export_public(_runtime_generators_zimage, globals())
 
 
 
@@ -1352,8 +1317,7 @@ LTX_IC_LORA_CHOICES = list(LTX_IC_LORA_OPTIONS.keys())
 
 
 _runtime_services_ltx_video = importlib.import_module('image_studio.services.ltx_video')
-export_module(_runtime_services_ltx_video, globals())
-_RUNTIME_MODULES.append(_runtime_services_ltx_video)
+export_public(_runtime_services_ltx_video, globals())
 
 
 
@@ -1424,8 +1388,7 @@ CHAT_GEMMA_LABEL_TO_KEY = {label: key for key, label in CHAT_GEMMA_CHOICES.items
 
 
 _runtime_pipelines_gemma = importlib.import_module('image_studio.pipelines.gemma')
-export_module(_runtime_pipelines_gemma, globals())
-_RUNTIME_MODULES.append(_runtime_pipelines_gemma)
+export_public(_runtime_pipelines_gemma, globals())
 _chat_selector = ChatModelSelector(CHAT_GEMMA_DEFAULT)
 
 
@@ -1452,41 +1415,47 @@ GEMMA_MODEL_SPECS = {
 
 
 
-_runtime_services_managed_runtime = importlib.import_module('image_studio.services.managed_runtime')
-export_module(_runtime_services_managed_runtime, globals())
-_RUNTIME_MODULES.append(_runtime_services_managed_runtime)
-
-
-
-
 _runtime_services_vllm = importlib.import_module('image_studio.services.vllm')
-export_module(_runtime_services_vllm, globals())
-_RUNTIME_MODULES.append(_runtime_services_vllm)
+export_public(_runtime_services_vllm, globals())
 
 
-_diffusiongemma_vllm_service = DiffusionGemmaVllmService()
+_diffusiongemma_vllm_service = DiffusionGemmaVllmService(
+    APP_CONFIG.vllm,
+    model_manager=model_mgr,
+    model_key=MODEL_DIFFUSIONGEMMA_VLLM,
+    vram_mb=MODEL_SPECS[MODEL_DIFFUSIONGEMMA_VLLM].vram_mb,
+    execution_lock=_inprocess_gpu_lock,
+    bootstrap_allowed=not _NO_BOOTSTRAP,
+)
+configure_app_routes(
+    WebRouteDependencies(
+        vllm_backend=_diffusiongemma_vllm_service,
+        vllm_request_timeout=APP_CONFIG.vllm.request_timeout,
+    )
+)
+configure_output_storage(output_store, _ideogram4_prompt_metadata_store)
+configure_ltx_workflow(
+    LtxWorkflow(
+        backend=_ltx_video_service,
+        api_base=APP_CONFIG.ltx.api_base,
+        output_dir=OUTPUT_DIR,
+    )
+)
 
 
 _runtime_services_krea2_comfy = importlib.import_module('image_studio.services.krea2_comfy')
-export_module(_runtime_services_krea2_comfy, globals())
-_RUNTIME_MODULES.append(_runtime_services_krea2_comfy)
+export_public(_runtime_services_krea2_comfy, globals())
 
 
-_krea2_comfy_service = Krea2ComfyService()
-MODEL_STORAGE = _build_model_storage_catalog()
-
-APP_CONTEXT = AppContext(
-    config=APP_CONFIG,
+_krea2_comfy_service = Krea2ComfyService(
+    APP_CONFIG.krea2,
     model_manager=model_mgr,
-    output_store=output_store,
-    ltx_video=_ltx_video_service,
-    diffusiongemma=_diffusiongemma_vllm_service,
-    krea2=_krea2_comfy_service,
-    chat_selector=_chat_selector,
-    model_load_lock=_model_load_lock,
-    gpu_lock=_inprocess_gpu_lock,
+    model_key=MODEL_KREA2_TURBO_NVFP4,
+    vram_mb=MODEL_SPECS[MODEL_KREA2_TURBO_NVFP4].vram_mb,
+    execution_lock=_inprocess_gpu_lock,
+    bootstrap_allowed=not _NO_BOOTSTRAP,
 )
-
+MODEL_STORAGE = _build_model_storage_catalog()
 
 _VLLM_PROXY_ROUTE_NAME = "image_studio_vllm_proxy"
 _VLLM_PROXY_HEALTH_ROUTE_NAME = "image_studio_vllm_proxy_health"
@@ -1505,8 +1474,7 @@ _VLLM_PROXY_HOP_BY_HOP_HEADERS = {
 
 
 _runtime_web_proxy = importlib.import_module('image_studio.web.proxy')
-export_module(_runtime_web_proxy, globals())
-_RUNTIME_MODULES.append(_runtime_web_proxy)
+export_public(_runtime_web_proxy, globals())
 
 
 
@@ -1528,8 +1496,7 @@ _RUNTIME_MODULES.append(_runtime_web_proxy)
 
 
 _runtime_web_designer = importlib.import_module('image_studio.web.designer')
-export_module(_runtime_web_designer, globals())
-_RUNTIME_MODULES.append(_runtime_web_designer)
+export_public(_runtime_web_designer, globals())
 
 
 
@@ -1560,8 +1527,7 @@ _ideogram4_upsample_cache = JsonFileCache(
 
 
 _runtime_pipelines_ideogram_prompting = importlib.import_module('image_studio.pipelines.ideogram.prompting')
-export_module(_runtime_pipelines_ideogram_prompting, globals())
-_RUNTIME_MODULES.append(_runtime_pipelines_ideogram_prompting)
+export_public(_runtime_pipelines_ideogram_prompting, globals())
 
 
 
@@ -1658,8 +1624,7 @@ Output requirements:
 """.strip()
 
 _runtime_generators_chat = importlib.import_module('image_studio.generators.chat')
-export_module(_runtime_generators_chat, globals())
-_RUNTIME_MODULES.append(_runtime_generators_chat)
+export_public(_runtime_generators_chat, globals())
 
 
 
@@ -1701,8 +1666,7 @@ _CHAT_SYSTEM = (
 # ---------------------------------------------------------------------------
 
 _runtime_ui_models = importlib.import_module('image_studio.ui.models')
-export_module(_runtime_ui_models, globals())
-_RUNTIME_MODULES.append(_runtime_ui_models)
+export_public(_runtime_ui_models, globals())
 
 
 
@@ -1726,11 +1690,10 @@ THEME = build_theme(gr)
 # ---------------------------------------------------------------------------
 
 _runtime_storage_gallery = importlib.import_module('image_studio.storage.gallery')
-export_module(_runtime_storage_gallery, globals())
-_RUNTIME_MODULES.append(_runtime_storage_gallery)
+export_public(_runtime_storage_gallery, globals())
+configure_gallery(OUTPUT_DIR)
 _runtime_ui_gallery_actions = importlib.import_module('image_studio.ui.gallery_actions')
-export_module(_runtime_ui_gallery_actions, globals())
-_RUNTIME_MODULES.append(_runtime_ui_gallery_actions)
+export_public(_runtime_ui_gallery_actions, globals())
 
 
 
@@ -1746,13 +1709,11 @@ GALLERY_VIDEO_EXTENSIONS = (".mp4", ".webm", ".avi", ".mov")
 API_DOCS = (Path(__file__).with_name("docs") / "api.md").read_text(encoding="utf-8")
 
 _runtime_ui_components_generate = importlib.import_module('image_studio.ui.components.generate')
-export_module(_runtime_ui_components_generate, globals())
-_RUNTIME_MODULES.append(_runtime_ui_components_generate)
+export_public(_runtime_ui_components_generate, globals())
 
 
 _runtime_ui_components_edit = importlib.import_module('image_studio.ui.components.edit')
-export_module(_runtime_ui_components_edit, globals())
-_RUNTIME_MODULES.append(_runtime_ui_components_edit)
+export_public(_runtime_ui_components_edit, globals())
 
 
 TAB_GENERATE = 0
@@ -1813,8 +1774,7 @@ HIDREAM_MODE_KEYS = {
 
 
 _runtime_generators_dispatch = importlib.import_module('image_studio.generators.dispatch')
-export_module(_runtime_generators_dispatch, globals())
-_RUNTIME_MODULES.append(_runtime_generators_dispatch)
+export_public(_runtime_generators_dispatch, globals())
 
 
 
@@ -1863,20 +1823,12 @@ IMAGE_MODEL_REGISTRY = build_image_model_registry(
     )
 )
 IMAGE_MODEL_EXECUTOR = ModelExecutor(IMAGE_MODEL_REGISTRY, IMAGE_BACKEND_REGISTRY)
+_runtime_generators_dispatch.configure_dispatch(
+    IMAGE_MODEL_EXECUTOR,
+    seedvr2_available=is_seedvr2_available,
+    seedvr2_loader=_get_seedvr2,
+)
 
-
-# Deprecated compatibility registries. New dispatch goes through IMAGE_MODEL_EXECUTOR.
-GENERATION_HANDLERS: dict[str, Callable[[GenerationRequest, Any], Any]] = {
-    "Qwen Image": _run_qwen_generation,
-    "Z-Image": _run_zimage_generation,
-    HIDREAM_O1_MODE: _run_hidream_generation,
-    IDEOGRAM4_MODE: _run_ideogram_generation,
-    BOOGU_IMAGE_MODE: _run_boogu_generation,
-    KREA2_MODE: _run_krea2_generation,
-}
-GENERATION_REGISTRY = RequestHandlerRegistry[GenerationRequest](_run_qwen_generation)
-for _mode, _handler in GENERATION_HANDLERS.items():
-    GENERATION_REGISTRY.register(_mode, _handler)
 GENERATOR_MODES = [
     adapter.spec.display_name
     for adapter in IMAGE_MODEL_REGISTRY.for_operation(Operation.IMAGE_GENERATE)
@@ -1891,14 +1843,6 @@ GENERATOR_MODES = [
 
 
 
-EDIT_HANDLERS: dict[str, Callable[[EditRequest, Any], Any]] = {
-    "Qwen Image Edit": _run_qwen_edit_request,
-    HIDREAM_O1_MODE: _run_hidream_edit_request,
-    BOOGU_IMAGE_MODE: _run_boogu_edit_request,
-}
-EDIT_REGISTRY = RequestHandlerRegistry[EditRequest](_run_qwen_edit_request)
-for _mode, _handler in EDIT_HANDLERS.items():
-    EDIT_REGISTRY.register(_mode, _handler)
 EDITOR_MODES = [
     adapter.spec.display_name
     for adapter in IMAGE_MODEL_REGISTRY.for_operation(Operation.IMAGE_EDIT)
@@ -1946,8 +1890,15 @@ EDITOR_MODES = [
 
 
 _runtime_services_ai_remover = importlib.import_module('image_studio.services.ai_remover')
-export_module(_runtime_services_ai_remover, globals())
-_RUNTIME_MODULES.append(_runtime_services_ai_remover)
+export_public(_runtime_services_ai_remover, globals())
+configure_ai_remover(
+    AiRemoverConfig(
+        directory=REMOVE_AI_WATERMARKS_DIR,
+        repository=REMOVE_AI_WATERMARKS_REPO,
+        transformers_spec=REMOVE_AI_WATERMARKS_TRANSFORMERS_SPEC,
+        hf_transfer_spec=REMOVE_AI_WATERMARKS_HF_TRANSFER_SPEC,
+    )
+)
 
 
 
@@ -1985,8 +1936,7 @@ _RUNTIME_MODULES.append(_runtime_services_ai_remover)
 
 
 _runtime_ui_layout = importlib.import_module('image_studio.ui.layout')
-export_module(_runtime_ui_layout, globals())
-_RUNTIME_MODULES.append(_runtime_ui_layout)
+export_public(_runtime_ui_layout, globals())
 
 
 
@@ -1994,28 +1944,23 @@ _RUNTIME_MODULES.append(_runtime_ui_layout)
 
 
 _runtime_ui_components_upscale = importlib.import_module('image_studio.ui.components.upscale')
-export_module(_runtime_ui_components_upscale, globals())
-_RUNTIME_MODULES.append(_runtime_ui_components_upscale)
+export_public(_runtime_ui_components_upscale, globals())
 
 
 _runtime_ui_components_chat = importlib.import_module('image_studio.ui.components.chat')
-export_module(_runtime_ui_components_chat, globals())
-_RUNTIME_MODULES.append(_runtime_ui_components_chat)
+export_public(_runtime_ui_components_chat, globals())
 
 
 _runtime_ui_components_gallery = importlib.import_module('image_studio.ui.components.gallery')
-export_module(_runtime_ui_components_gallery, globals())
-_RUNTIME_MODULES.append(_runtime_ui_components_gallery)
+export_public(_runtime_ui_components_gallery, globals())
 
 
 _runtime_ui_components_models = importlib.import_module('image_studio.ui.components.models')
-export_module(_runtime_ui_components_models, globals())
-_RUNTIME_MODULES.append(_runtime_ui_components_models)
+export_public(_runtime_ui_components_models, globals())
 
 
 _runtime_ui_components_ai_remover = importlib.import_module('image_studio.ui.components.ai_remover')
-export_module(_runtime_ui_components_ai_remover, globals())
-_RUNTIME_MODULES.append(_runtime_ui_components_ai_remover)
+export_public(_runtime_ui_components_ai_remover, globals())
 
 
 VIDEO_QUICK_RATIO_CHOICES = [
@@ -2044,8 +1989,7 @@ VIDEO_QUICK_RATIO_PRESETS = {
 
 
 _runtime_ui_components_video = importlib.import_module('image_studio.ui.components.video')
-export_module(_runtime_ui_components_video, globals())
-_RUNTIME_MODULES.append(_runtime_ui_components_video)
+export_public(_runtime_ui_components_video, globals())
 
 
 
@@ -2059,8 +2003,7 @@ _RUNTIME_MODULES.append(_runtime_ui_components_video)
 
 
 _runtime_ui_wiring = importlib.import_module('image_studio.ui.wiring')
-export_module(_runtime_ui_wiring, globals())
-_RUNTIME_MODULES.append(_runtime_ui_wiring)
+export_public(_runtime_ui_wiring, globals())
 
 
 
@@ -2131,96 +2074,19 @@ IDEOGRAM_JSON_DESIGNER_OPEN_JS = (Path(__file__).with_name("ui") / "designer.js"
 
 
 _runtime_web_routes = importlib.import_module('image_studio.web.routes')
-export_module(_runtime_web_routes, globals())
-_RUNTIME_MODULES.append(_runtime_web_routes)
+export_public(_runtime_web_routes, globals())
 
-
-rebind_modules(_RUNTIME_MODULES, globals())
-
-
-def run_selftest() -> int:
-    """Run the pytest compatibility suite without launching Gradio."""
-    environment = os.environ.copy()
-    environment["IMAGE_STUDIO_NO_BOOTSTRAP"] = "1"
-    tests_dir = Path(__file__).resolve().parents[1] / "tests"
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", str(tests_dir)],
-        cwd=BASE_DIR,
-        env=environment,
-        check=False,
-    )
-    return int(result.returncode)
-
-
-
-
-def parse_args(argv: list[str] | None = None):
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--share", action=argparse.BooleanOptionalAction, default=True, help="Enable Gradio share link")
-    parser.add_argument("--port", type=int, default=7860, help="Server port")
-    parser.add_argument("--auth", help="user:password for basic auth")
-    parser.add_argument(
-        "--vllm-proxy",
-        action=argparse.BooleanOptionalAction,
-        default=IMAGE_STUDIO_VLLM_PROXY_DEFAULT,
-        help="Expose the managed DiffusionGemma vLLM backend at /v1/* on the WebUI server (default: enabled)",
-    )
-    parser.add_argument(
-        "--vllm-proxy-api-key",
-        default=IMAGE_STUDIO_VLLM_PROXY_API_KEY,
-        help="Optional bearer/API key required by the /v1/* vLLM proxy",
-    )
-    parser.add_argument("--selftest", action="store_true", help="Run the pytest compatibility suite without launching")
-    return parser.parse_args(argv)
-
-
-def main(argv: list[str] | None = None):
-    args = parse_args(argv)
-    if args.selftest:
-        return run_selftest()
-
-    auth = tuple(args.auth.split(":", 1)) if args.auth else None
-
-    app = build_ui(APP_CONTEXT)
-    app.queue(max_size=4, default_concurrency_limit=1)
-    launch_kwargs = {
-        "server_name": "0.0.0.0",
-        "server_port": args.port,
-        "share": args.share,
-        "auth": auth,
-        "css": CSS,
-        "theme": THEME,
-    }
-    fastapi_app = attach_app_routes(
-        app,
-        vllm_proxy=args.vllm_proxy,
-        api_key=args.vllm_proxy_api_key,
-        model_catalog_provider=IMAGE_MODEL_EXECUTOR.catalog,
-    )
-    if args.vllm_proxy and fastapi_app is not None:
-        launch_kwargs["_app"] = fastapi_app
-    if args.vllm_proxy and args.share and not args.vllm_proxy_api_key:
-        log.warning(
-            "vLLM proxy is enabled with Gradio share and no proxy API key. "
-            "Use --vllm-proxy-api-key or IMAGE_STUDIO_VLLM_PROXY_API_KEY for public links."
-        )
-    app.launch(**launch_kwargs, prevent_thread_lock=True)
-    attach_app_routes(
-        app,
-        vllm_proxy=args.vllm_proxy,
-        api_key=args.vllm_proxy_api_key,
-        model_catalog_provider=IMAGE_MODEL_EXECUTOR.catalog,
-    )
-    block_thread = getattr(app, "block_thread", None)
-    if callable(block_thread):
-        block_thread()
-    else:
-        while True:
-            time.sleep(3600)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+APP_CONTEXT = AppContext(
+    config=APP_CONFIG,
+    model_manager=model_mgr,
+    output_store=output_store,
+    ltx_video=_ltx_video_service,
+    diffusiongemma=_diffusiongemma_vllm_service,
+    krea2=_krea2_comfy_service,
+    chat_selector=_chat_selector,
+    model_load_lock=_model_load_lock,
+    gpu_lock=_inprocess_gpu_lock,
+    image_executor=IMAGE_MODEL_EXECUTOR,
+    model_storage=MODEL_STORAGE,
+    ui_actions=UiActions.from_compatibility_runtime(sys.modules[__name__]),
+)

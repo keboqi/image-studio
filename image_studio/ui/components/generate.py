@@ -1,16 +1,13 @@
 """Extracted runtime implementation."""
 
 from __future__ import annotations
-from image_studio.ui.components.base import ComponentSet
 
 # --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+from dataclasses import dataclass
+from typing import Any
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
+from image_studio.runtime_access import runtime_namespace as _runtime
+from image_studio.ui.components.base import ComponentSet
 
 GEN_VISIBILITY_ORDER = (
     "negative", "qwen", "zimage", "zimage_turbo", "zimage_full", "pid",
@@ -23,72 +20,72 @@ def _gen_mode_visibility_updates(mode: str, zimage_version: str, hidream_version
     mode = mode or "Qwen Image"
     zimage_version = zimage_version or "Turbo"
     hidream_version = hidream_version or "Dev"
-    boogu_version = _normalize_boogu_generation_version(boogu_version)
+    boogu_version = _runtime()._normalize_boogu_generation_version(boogu_version)
     
     qwen = mode == "Qwen Image"
     zimage = mode == "Z-Image"
     turbo = zimage and zimage_version == "Turbo"
     zfull = zimage and zimage_version == "Best Quality"
-    hidream = mode == HIDREAM_O1_MODE
-    ideogram = mode == IDEOGRAM4_MODE
-    boogu = mode == BOOGU_IMAGE_MODE
-    krea2 = mode == KREA2_MODE
-    boogu_base = boogu and boogu_version == BOOGU_IMAGE_VERSION_BASE
+    hidream = mode == _runtime().HIDREAM_O1_MODE
+    ideogram = mode == _runtime().IDEOGRAM4_MODE
+    boogu = mode == _runtime().BOOGU_IMAGE_MODE
+    krea2 = mode == _runtime().KREA2_MODE
+    boogu_base = boogu and boogu_version == _runtime().BOOGU_IMAGE_VERSION_BASE
     zimage_family = turbo or zfull
     pid_capable = qwen or zimage_family or ideogram or krea2
 
     if qwen or krea2:
-        pid_ckpt_choices = PID_QWEN_CKPT_CHOICES
+        pid_ckpt_choices = _runtime().PID_QWEN_CKPT_CHOICES
     elif ideogram:
-        pid_ckpt_choices = PID_IDEOGRAM4_CKPT_CHOICES
+        pid_ckpt_choices = _runtime().PID_IDEOGRAM4_CKPT_CHOICES
     else:
-        pid_ckpt_choices = PID_ZIMAGE_CKPT_CHOICES
+        pid_ckpt_choices = _runtime().PID_ZIMAGE_CKPT_CHOICES
 
     if boogu_base:
-        boogu_steps_update = gr.update(
+        boogu_steps_update = _runtime().gr.update(
             visible=True,
             minimum=25,
             maximum=50,
-            value=BOOGU_IMAGE_BASE_DEFAULT_STEPS,
+            value=_runtime().BOOGU_IMAGE_BASE_DEFAULT_STEPS,
             label="Steps (Base)",
         )
     else:
-        boogu_steps_update = gr.update(
+        boogu_steps_update = _runtime().gr.update(
             visible=boogu,
             minimum=3,
             maximum=8,
-            value=BOOGU_IMAGE_TURBO_DEFAULT_STEPS,
+            value=_runtime().BOOGU_IMAGE_TURBO_DEFAULT_STEPS,
             label="Steps (Turbo)",
         )
 
     updates = {
-        "negative": gr.update(visible=qwen or zfull or boogu_base),
-        "qwen": gr.update(visible=qwen),
-        "zimage": gr.update(visible=zimage),
-        "zimage_turbo": gr.update(visible=turbo),
-        "zimage_full": gr.update(visible=zfull),
-        "pid": gr.update(visible=pid_capable),
-        "hidream": gr.update(visible=hidream),
-        "ideogram": gr.update(visible=ideogram),
-        "boogu": gr.update(visible=boogu),
-        "krea2": gr.update(visible=krea2),
-        "boogu_base": gr.update(visible=boogu_base),
+        "negative": _runtime().gr.update(visible=qwen or zfull or boogu_base),
+        "qwen": _runtime().gr.update(visible=qwen),
+        "zimage": _runtime().gr.update(visible=zimage),
+        "zimage_turbo": _runtime().gr.update(visible=turbo),
+        "zimage_full": _runtime().gr.update(visible=zfull),
+        "pid": _runtime().gr.update(visible=pid_capable),
+        "hidream": _runtime().gr.update(visible=hidream),
+        "ideogram": _runtime().gr.update(visible=ideogram),
+        "boogu": _runtime().gr.update(visible=boogu),
+        "krea2": _runtime().gr.update(visible=krea2),
+        "boogu_base": _runtime().gr.update(visible=boogu_base),
         "boogu_steps": boogu_steps_update,
-        "pid_checkpoint": gr.update(choices=pid_ckpt_choices, value=PID_CKPT_AUTO),
+        "pid_checkpoint": _runtime().gr.update(choices=pid_ckpt_choices, value=_runtime().PID_CKPT_AUTO),
     }
     return tuple(updates[name] for name in GEN_VISIBILITY_ORDER)
 
 def _apply_gen_size_preset(size: str, aspect: str):
-    dims = GEN_SIZE_PRESETS.get(size, {}).get(aspect or "")
+    dims = _runtime().GEN_SIZE_PRESETS.get(size, {}).get(aspect or "")
     if dims is None:
-        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+        return _runtime().gr.update(), _runtime().gr.update(), _runtime().gr.update(), _runtime().gr.update(), _runtime().gr.update()
     width, height = dims
     return (
-        gr.update(value=aspect if size == "Small" else None),
-        gr.update(value=aspect if size == "Medium" else None),
-        gr.update(value=aspect if size == "Large" else None),
-        gr.update(value=width),
-        gr.update(value=height),
+        _runtime().gr.update(value=aspect if size == "Small" else None),
+        _runtime().gr.update(value=aspect if size == "Medium" else None),
+        _runtime().gr.update(value=aspect if size == "Large" else None),
+        _runtime().gr.update(value=width),
+        _runtime().gr.update(value=height),
     )
 
 def _apply_gen_small_size_preset(aspect: str):
@@ -155,195 +152,195 @@ class GenerateTab(ComponentSet):
     to_video: Any
 
 
-def _build_generate_tab() -> dict[str, Any]:
-    with gr.Tab("Generate", id=TAB_GENERATE):
-        with gr.Row(equal_height=False):
-            with gr.Column(scale=5):
-                with gr.Row():
-                    gen_mode = gr.Radio(
-                        GENERATOR_MODES,
+def _build_generate_tab() -> GenerateTab:
+    with _runtime().gr.Tab("Generate", id=_runtime().TAB_GENERATE):
+        with _runtime().gr.Row(equal_height=False):
+            with _runtime().gr.Column(scale=5):
+                with _runtime().gr.Row():
+                    gen_mode = _runtime().gr.Radio(
+                        _runtime().GENERATOR_MODES,
                         value="Z-Image",
                         label="Generator",
                         elem_id="gen-mode",
                     )
-                gen_prompt = gr.Textbox(
+                gen_prompt = _runtime().gr.Textbox(
                     label="Prompt", lines=4,
                     placeholder="Describe the image you want to create",
                     elem_id="gen-prompt",
                 )
-                gen_enhance_btn = gr.Button(
+                gen_enhance_btn = _runtime().gr.Button(
                     "Enhance Prompt (Gemma 4)", size="sm",
                     elem_classes=["enhance-btn"],
                 )
-                gen_btn = gr.Button("Generate", variant="primary", elem_id="gen-btn")
-                with gr.Accordion("Generation Parameters (Advanced)", open=False):
-                    with gr.Group(visible=False, elem_id="gen-neg-group") as gen_neg_group:
-                        gen_neg = gr.Textbox(label="Negative Prompt", lines=1, value="")
-                    with gr.Row():
-                        gen_size_small = gr.Dropdown(
-                            GEN_SIZE_ASPECT_CHOICES,
+                gen_btn = _runtime().gr.Button("Generate", variant="primary", elem_id="gen-btn")
+                with _runtime().gr.Accordion("Generation Parameters (Advanced)", open=False):
+                    with _runtime().gr.Group(visible=False, elem_id="gen-neg-group") as gen_neg_group:
+                        gen_neg = _runtime().gr.Textbox(label="Negative Prompt", lines=1, value="")
+                    with _runtime().gr.Row():
+                        gen_size_small = _runtime().gr.Dropdown(
+                            _runtime().GEN_SIZE_ASPECT_CHOICES,
                             value="1:1",
                             label="Small",
                         )
-                        gen_size_medium = gr.Dropdown(
-                            GEN_SIZE_ASPECT_CHOICES,
+                        gen_size_medium = _runtime().gr.Dropdown(
+                            _runtime().GEN_SIZE_ASPECT_CHOICES,
                             value=None,
                             label="Medium",
                         )
-                        gen_size_large = gr.Dropdown(
-                            GEN_SIZE_ASPECT_CHOICES,
+                        gen_size_large = _runtime().gr.Dropdown(
+                            _runtime().GEN_SIZE_ASPECT_CHOICES,
                             value=None,
                             label="Large",
                         )
-                    with gr.Row():
-                        gen_w = gr.Slider(256, 4096, 1024, step=32, label="Width")
-                        gen_h = gr.Slider(256, 4096, 1024, step=32, label="Height")
-                    with gr.Row(visible=False, elem_id="gen-lightning-group") as gen_lightning_group:
-                        gen_cfg = gr.Slider(0.5, 5.0, 1.0, step=0.1, label="CFG Scale")
-                    with gr.Group(visible=True, elem_id="gen-zimage-group") as gen_zimage_group:
-                        gr.Markdown("**Z-Image Settings**")
-                        gen_zimage_version = gr.Dropdown(["Turbo", "Best Quality"], value="Turbo", label="Z-Image Version")
-                        with gr.Row(visible=True, elem_id="gen-zimage-turbo-group") as gen_zimage_turbo_group:
-                            gen_steps = gr.Slider(4, 16, 8, step=1, label="Steps (DiT forwards)")
-                            gen_guidance = gr.Slider(0.0, 1.0, 0.0, step=0.05, label="Guidance (Turbo=0)")
-                        with gr.Row(visible=False, elem_id="gen-zimage-full-group") as gen_zimage_full_group:
-                            gen_full_steps = gr.Slider(20, 60, 30, step=1, label="Steps")
-                            gen_full_guidance = gr.Slider(1.0, 8.0, 4.0, step=0.25, label="Guidance Scale (CFG)")
-                    with gr.Group(visible=False, elem_id="gen-hidream-group") as gen_hidream_group:
-                        gr.Markdown("**HiDream-O1 Settings**")
-                        gen_hidream_version = gr.Dropdown(["Dev", "Best Quality"], value="Dev", label="HiDream-O1 Version")
-                    with gr.Group(visible=False, elem_id="gen-boogu-group") as gen_boogu_group:
-                        gr.Markdown("**Boogu-Image Settings**")
-                        gen_boogu_version = gr.Dropdown(
-                            BOOGU_IMAGE_GENERATION_VERSIONS,
-                            value=BOOGU_IMAGE_VERSION_TURBO,
+                    with _runtime().gr.Row():
+                        gen_w = _runtime().gr.Slider(256, 4096, 1024, step=32, label="Width")
+                        gen_h = _runtime().gr.Slider(256, 4096, 1024, step=32, label="Height")
+                    with _runtime().gr.Row(visible=False, elem_id="gen-lightning-group") as gen_lightning_group:
+                        gen_cfg = _runtime().gr.Slider(0.5, 5.0, 1.0, step=0.1, label="CFG Scale")
+                    with _runtime().gr.Group(visible=True, elem_id="gen-zimage-group") as gen_zimage_group:
+                        _runtime().gr.Markdown("**Z-Image Settings**")
+                        gen_zimage_version = _runtime().gr.Dropdown(["Turbo", "Best Quality"], value="Turbo", label="Z-Image Version")
+                        with _runtime().gr.Row(visible=True, elem_id="gen-zimage-turbo-group") as gen_zimage_turbo_group:
+                            gen_steps = _runtime().gr.Slider(4, 16, 8, step=1, label="Steps (DiT forwards)")
+                            gen_guidance = _runtime().gr.Slider(0.0, 1.0, 0.0, step=0.05, label="Guidance (Turbo=0)")
+                        with _runtime().gr.Row(visible=False, elem_id="gen-zimage-full-group") as gen_zimage_full_group:
+                            gen_full_steps = _runtime().gr.Slider(20, 60, 30, step=1, label="Steps")
+                            gen_full_guidance = _runtime().gr.Slider(1.0, 8.0, 4.0, step=0.25, label="Guidance Scale (CFG)")
+                    with _runtime().gr.Group(visible=False, elem_id="gen-hidream-group") as gen_hidream_group:
+                        _runtime().gr.Markdown("**HiDream-O1 Settings**")
+                        gen_hidream_version = _runtime().gr.Dropdown(["Dev", "Best Quality"], value="Dev", label="HiDream-O1 Version")
+                    with _runtime().gr.Group(visible=False, elem_id="gen-boogu-group") as gen_boogu_group:
+                        _runtime().gr.Markdown("**Boogu-Image Settings**")
+                        gen_boogu_version = _runtime().gr.Dropdown(
+                            _runtime().BOOGU_IMAGE_GENERATION_VERSIONS,
+                            value=_runtime().BOOGU_IMAGE_VERSION_TURBO,
                             label="Boogu-Image Version",
                         )
-                        gen_boogu_steps = gr.Slider(
+                        gen_boogu_steps = _runtime().gr.Slider(
                             3,
                             8,
-                            BOOGU_IMAGE_TURBO_DEFAULT_STEPS,
+                            _runtime().BOOGU_IMAGE_TURBO_DEFAULT_STEPS,
                             step=1,
                             label="Steps (Turbo)",
                         )
-                        with gr.Row(visible=False, elem_id="gen-boogu-base-group") as gen_boogu_base_group:
-                            gen_boogu_base_guidance = gr.Slider(2.0, 5.0, 4.0, step=0.25, label="Text Guidance")
-                    with gr.Group(visible=False, elem_id="gen-krea2-group") as gen_krea2_group:
-                        gr.Markdown("**Krea2 Turbo (ComfyUI)**")
-                        with gr.Row():
-                            gen_krea2_steps = gr.Slider(
+                        with _runtime().gr.Row(visible=False, elem_id="gen-boogu-base-group") as gen_boogu_base_group:
+                            gen_boogu_base_guidance = _runtime().gr.Slider(2.0, 5.0, 4.0, step=0.25, label="Text Guidance")
+                    with _runtime().gr.Group(visible=False, elem_id="gen-krea2-group") as gen_krea2_group:
+                        _runtime().gr.Markdown("**Krea2 Turbo (ComfyUI)**")
+                        with _runtime().gr.Row():
+                            gen_krea2_steps = _runtime().gr.Slider(
                                 1,
                                 16,
-                                KREA2_DEFAULT_STEPS,
+                                _runtime().KREA2_DEFAULT_STEPS,
                                 step=1,
                                 label="Steps",
                             )
-                            gen_krea2_cfg = gr.Slider(
+                            gen_krea2_cfg = _runtime().gr.Slider(
                                 0.0,
                                 5.0,
-                                KREA2_DEFAULT_CFG,
+                                _runtime().KREA2_DEFAULT_CFG,
                                 step=0.1,
                                 label="CFG (1 = disabled)",
                             )
-                    with gr.Group(visible=True, elem_id="gen-zimage-pid-group") as gen_zimage_pid_group:
-                        gr.Markdown("**PiD 4x Decode**")
-                        with gr.Row():
-                            gen_full_pid_enabled = gr.Checkbox(value=False, label="PiD 4x Decode")
-                            gen_full_pid_ckpt = gr.Dropdown(
-                                PID_ZIMAGE_CKPT_CHOICES,
-                                value=PID_CKPT_AUTO,
+                    with _runtime().gr.Group(visible=True, elem_id="gen-zimage-pid-group") as gen_zimage_pid_group:
+                        _runtime().gr.Markdown("**PiD 4x Decode**")
+                        with _runtime().gr.Row():
+                            gen_full_pid_enabled = _runtime().gr.Checkbox(value=False, label="PiD 4x Decode")
+                            gen_full_pid_ckpt = _runtime().gr.Dropdown(
+                                _runtime().PID_ZIMAGE_CKPT_CHOICES,
+                                value=_runtime().PID_CKPT_AUTO,
                                 label="PiD Checkpoint",
                             )
-                        with gr.Row():
-                            gen_full_pid_steps = gr.Slider(1, 8, 4, step=1, label="PiD Steps")
-                            gen_full_pid_cfg = gr.Slider(0.0, 4.0, 1.0, step=0.25, label="PiD CFG")
-                    with gr.Group(visible=False, elem_id="gen-ideogram-group") as gen_ideogram_group:
-                        gr.Markdown("**Ideogram 4**")
-                        with gr.Row():
-                            gen_ideogram_pipeline = gr.Dropdown(
-                                IDEOGRAM4_PIPELINE_CHOICES,
-                                value=IDEOGRAM4_PIPELINE_LABELS[IDEOGRAM4_DEFAULT_PIPELINE],
+                        with _runtime().gr.Row():
+                            gen_full_pid_steps = _runtime().gr.Slider(1, 8, 4, step=1, label="PiD Steps")
+                            gen_full_pid_cfg = _runtime().gr.Slider(0.0, 4.0, 1.0, step=0.25, label="PiD CFG")
+                    with _runtime().gr.Group(visible=False, elem_id="gen-ideogram-group") as gen_ideogram_group:
+                        _runtime().gr.Markdown("**Ideogram 4**")
+                        with _runtime().gr.Row():
+                            gen_ideogram_pipeline = _runtime().gr.Dropdown(
+                                _runtime().IDEOGRAM4_PIPELINE_CHOICES,
+                                value=_runtime().IDEOGRAM4_PIPELINE_LABELS[_runtime().IDEOGRAM4_DEFAULT_PIPELINE],
                                 label="Pipeline",
                             )
-                            gen_ideogram_sampler = gr.Dropdown(
-                                IDEOGRAM4_SAMPLER_CHOICES,
+                            gen_ideogram_sampler = _runtime().gr.Dropdown(
+                                _runtime().IDEOGRAM4_SAMPLER_CHOICES,
                                 value="Turbo - 12 steps",
                                 label="Sampler Preset",
                             )
-                            gen_ideogram_upsampler = gr.Radio(
-                                IDEOGRAM4_UPSAMPLERS,
-                                value=_ideogram4_default_upsampler(),
+                            gen_ideogram_upsampler = _runtime().gr.Radio(
+                                _runtime().IDEOGRAM4_UPSAMPLERS,
+                                value=_runtime()._ideogram4_default_upsampler(),
                                 label="Prompt Upsampler",
                                 elem_id="gen-ideogram-upsampler",
                             )
-                        with gr.Row():
-                            gen_ideogram_strip_prompt = gr.Checkbox(
+                        with _runtime().gr.Row():
+                            gen_ideogram_strip_prompt = _runtime().gr.Checkbox(
                                 value=True,
                                 label="Strip aspect ratio/bboxes",
                                 elem_id="gen-ideogram-strip-prompt",
                             )
-                            gen_ideogram_reuse_cache = gr.Checkbox(
+                            gen_ideogram_reuse_cache = _runtime().gr.Checkbox(
                                 value=True,
                                 label="Reuse upsample cache",
                             )
-                            gen_ideogram_gemma_thinking = gr.Checkbox(
+                            gen_ideogram_gemma_thinking = _runtime().gr.Checkbox(
                                 value=False,
                                 label="Gemma Thinking",
                             )
-                        gen_ideogram_gemma_tokens = gr.Slider(
+                        gen_ideogram_gemma_tokens = _runtime().gr.Slider(
                             512, 4096, 2048, step=128,
                             label="Gemma Max New Tokens",
                         )
-                        gen_ideogram_cfg_one_final_steps = gr.Slider(
+                        gen_ideogram_cfg_one_final_steps = _runtime().gr.Slider(
                             0, 8, 0, step=1,
                             label="CFG=1 Final Steps",
                         )
-                        with gr.Row():
-                            gen_ideogram_lora_mode = gr.Dropdown(
-                                IDEOGRAM4_LORA_CHOICES,
-                                value=IDEOGRAM4_LORA_OFF,
+                        with _runtime().gr.Row():
+                            gen_ideogram_lora_mode = _runtime().gr.Dropdown(
+                                _runtime().IDEOGRAM4_LORA_CHOICES,
+                                value=_runtime().IDEOGRAM4_LORA_OFF,
                                 label="Realism Engine LoRA",
                             )
-                            gen_ideogram_lora_weight = gr.Dropdown(
-                                IDEOGRAM4_REALISM_LORA_WEIGHTS,
-                                value=IDEOGRAM4_REALISM_LORA_DEFAULT,
+                            gen_ideogram_lora_weight = _runtime().gr.Dropdown(
+                                _runtime().IDEOGRAM4_REALISM_LORA_WEIGHTS,
+                                value=_runtime().IDEOGRAM4_REALISM_LORA_DEFAULT,
                                 label="LoRA Weight",
                             )
-                        with gr.Row():
-                            gen_ideogram_lora_cond_strength = gr.Slider(
+                        with _runtime().gr.Row():
+                            gen_ideogram_lora_cond_strength = _runtime().gr.Slider(
                                 0.0, 1.5, 0.9, step=0.05,
                                 label="LoRA Conditional Strength",
                             )
-                            gen_ideogram_lora_uncond_strength = gr.Slider(
+                            gen_ideogram_lora_uncond_strength = _runtime().gr.Slider(
                                 0.0, 1.5, 0.4, step=0.05,
                                 label="LoRA Unconditional Strength",
                             )
-                        gen_ideogram_api_key = gr.Textbox(
+                        gen_ideogram_api_key = _runtime().gr.Textbox(
                             label="Ideogram API Key",
                             type="password",
                             value="",
                         )
-                        gen_ideogram_designer_payload = gr.Textbox(
+                        gen_ideogram_designer_payload = _runtime().gr.Textbox(
                             visible=False,
                             elem_id="gen-ideogram-designer-payload",
                         )
-                        gen_ideogram_open_designer_btn = gr.Button(
+                        gen_ideogram_open_designer_btn = _runtime().gr.Button(
                             "Open JSON Designer",
                             size="sm",
                         )
-                        with gr.Accordion("Raw JSON Build Prompt", open=False):
-                            gen_ideogram_build_prompt_btn = gr.Button("Build Prompt JSON", size="sm")
-                            gen_ideogram_raw_prompt = gr.Textbox(label="Raw JSON", lines=10, interactive=False)
-                    gen_seed = gr.Number(-1, label="Seed (-1 = random)", precision=0)
-            with gr.Column(scale=5):
-                gen_out = gr.Image(label="Preview", type="filepath", height=520, interactive=False, format="webp")
-                with gr.Row():
-                    gen_to_edit = gr.Button("Send to Edit", size="sm", elem_classes=["send-btn"])
-                    gen_to_upscale = gr.Button("Send to Upscale", size="sm", elem_classes=["send-btn"])
-                    gen_to_ai_remover = gr.Button("Send to AI Remover", size="sm", elem_classes=["send-btn"])
-                    gen_to_video = gr.Button("Send to Video", size="sm", elem_classes=["send-btn"])
-                gen_st = gr.Markdown("", elem_id="gen-status")
-                gen_raw = gr.File(label="Raw PNG Download", interactive=False)
+                        with _runtime().gr.Accordion("Raw JSON Build Prompt", open=False):
+                            gen_ideogram_build_prompt_btn = _runtime().gr.Button("Build Prompt JSON", size="sm")
+                            gen_ideogram_raw_prompt = _runtime().gr.Textbox(label="Raw JSON", lines=10, interactive=False)
+                    gen_seed = _runtime().gr.Number(-1, label="Seed (-1 = random)", precision=0)
+            with _runtime().gr.Column(scale=5):
+                gen_out = _runtime().gr.Image(label="Preview", type="filepath", height=520, interactive=False, format="webp")
+                with _runtime().gr.Row():
+                    gen_to_edit = _runtime().gr.Button("Send to Edit", size="sm", elem_classes=["send-btn"])
+                    gen_to_upscale = _runtime().gr.Button("Send to Upscale", size="sm", elem_classes=["send-btn"])
+                    gen_to_ai_remover = _runtime().gr.Button("Send to AI Remover", size="sm", elem_classes=["send-btn"])
+                    gen_to_video = _runtime().gr.Button("Send to Video", size="sm", elem_classes=["send-btn"])
+                gen_st = _runtime().gr.Markdown("", elem_id="gen-status")
+                gen_raw = _runtime().gr.File(label="Raw PNG Download", interactive=False)
         visibility_inputs = [gen_mode, gen_zimage_version, gen_hidream_version, gen_boogu_version]
         visibility_outputs = [
             gen_neg_group,
@@ -443,4 +440,3 @@ __all__ = (
     '_apply_gen_large_size_preset',
     '_build_generate_tab',
 )
-_seal_runtime_module(globals())

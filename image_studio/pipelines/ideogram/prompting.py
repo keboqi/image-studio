@@ -1,12 +1,14 @@
 """Ideogram caption cleanup, normalization, and parsing."""
 
 from __future__ import annotations
-from image_studio.errors import UserInputError
 
 import json
 import re
 from collections.abc import Callable
 from typing import Any
+
+from image_studio.errors import UserInputError
+from image_studio.runtime_access import runtime_namespace as _runtime
 
 from ...parsing import extract_json_object, strip_markdown_fences
 
@@ -92,13 +94,7 @@ def parse_caption(
 pure_extract_json_object = extract_json_object
 
 # --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
 
 def _strip_markdown_fences(text: str) -> str:
     text = (text or "").strip()
@@ -117,7 +113,7 @@ def extract_json_object(text: str) -> str | None:
 def _ideogram4_aspect_ratio(width: int, height: int) -> str:
     width = int(width)
     height = int(height)
-    divisor = math.gcd(width, height) or 1
+    divisor = _runtime().math.gcd(width, height) or 1
     return f"{width // divisor}:{height // divisor}"
 
 def _ideogram4_strip_markdown_fences(text: str) -> str:
@@ -187,13 +183,13 @@ def _ideogram4_normalize_caption_object(caption: Any, aspect_ratio: str) -> dict
             normalized_cd["elements"] = normalized_elements
         normalized["compositional_deconstruction"] = normalized_cd
 
-    return _get_ideogram4()["reorder_caption_keys"](normalized)
+    return _runtime()._get_ideogram4()["reorder_caption_keys"](normalized)
 
 def _ideogram4_parse_caption(text: str, aspect_ratio: str) -> str:
     return parse_caption(
         text,
         aspect_ratio,
-        reorder=_get_ideogram4()["reorder_caption_keys"],
+        reorder=_runtime()._get_ideogram4()["reorder_caption_keys"],
     )
 
 def _ideogram4_repair_caption(raw_text: str, aspect_ratio: str) -> str:
@@ -209,11 +205,11 @@ def _ideogram4_repair_caption(raw_text: str, aspect_ratio: str) -> str:
     return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
 
 def _ideogram4_load_upsample_cache() -> dict:
-    return _ideogram4_upsample_cache.load()
+    return _runtime()._ideogram4_upsample_cache.load()
 
 def _ideogram4_upsample_cache_model(upsampler: str, chat_model: str | None = None) -> str:
-    if upsampler == IDEOGRAM4_UPSAMPLE_GEMMA:
-        return _normalize_chat_gemma_choice(chat_model or _chat_selector.choice)
+    if upsampler == _runtime().IDEOGRAM4_UPSAMPLE_GEMMA:
+        return _runtime()._normalize_chat_gemma_choice(chat_model or _runtime()._chat_selector.choice)
     return ""
 
 def _ideogram4_upsample_cache_key(
@@ -228,7 +224,7 @@ def _ideogram4_upsample_cache_key(
     if cache_model:
         payload["chat_model"] = cache_model
     material = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+    return _runtime().hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 def _ideogram4_get_cached_upsample(
     prompt: str,
@@ -238,7 +234,7 @@ def _ideogram4_get_cached_upsample(
     key = _ideogram4_upsample_cache_key(prompt, upsampler, cache_model)
     entry = _ideogram4_load_upsample_cache().get(key)
     if isinstance(entry, dict) and isinstance(entry.get("result"), str):
-        log.info("Reusing cached Ideogram prompt upsample (%s).", upsampler)
+        _runtime().log.info("Reusing cached Ideogram prompt upsample (%s).", upsampler)
         return entry["result"]
     return None
 
@@ -249,11 +245,11 @@ def _ideogram4_store_cached_upsample(
     cache_model: str = "",
 ):
     key = _ideogram4_upsample_cache_key(prompt, upsampler, cache_model)
-    _ideogram4_upsample_cache.set(
+    _runtime()._ideogram4_upsample_cache.set(
         key,
         {
             "result": result,
-            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "created_at": _runtime().datetime.now().isoformat(timespec="seconds"),
         },
     )
 
@@ -266,8 +262,8 @@ def _ideogram4_local_upsample_gemma(
     chat_model: str | None = None,
 ) -> str:
     aspect_ratio = _ideogram4_aspect_ratio(width, height)
-    messages = _get_ideogram4()["build_messages"]("v1.txt", prompt, aspect_ratio)
-    raw = _gemma_generate(
+    messages = _runtime()._get_ideogram4()["build_messages"]("v1.txt", prompt, aspect_ratio)
+    raw = _runtime()._gemma_generate(
         messages,
         max_new_tokens=max(512, int(max_new_tokens)),
         enable_thinking=bool(enable_thinking),
@@ -277,29 +273,29 @@ def _ideogram4_local_upsample_gemma(
     try:
         return _ideogram4_parse_caption(raw, aspect_ratio)
     except Exception as parse_error:
-        log.warning("Local Gemma Ideogram caption parse failed; trying json-repair: %s", parse_error)
+        _runtime().log.warning("Local Gemma Ideogram caption parse failed; trying json-repair: %s", parse_error)
         return _ideogram4_repair_caption(raw, aspect_ratio)
 
 def _ideogram4_remote_api_key(api_key: str = "") -> str:
-    key = (api_key or "").strip() or APP_CONFIG.ideogram.api_key
+    key = (api_key or "").strip() or _runtime().APP_CONFIG.ideogram.api_key
     if key:
         return key
-    local_key_path = os.path.join(BASE_DIR, "app_standalone_api_key.txt")
+    local_key_path = _runtime().os.path.join(_runtime().BASE_DIR, "app_standalone_api_key.txt")
     try:
-        with open(local_key_path, "r", encoding="utf-8") as fh:
+        with open(local_key_path, encoding="utf-8") as fh:
             return fh.read().strip()
     except OSError:
         return ""
 
 def _ideogram4_default_upsampler() -> str:
-    return IDEOGRAM4_UPSAMPLE_REMOTE if _ideogram4_remote_api_key() else IDEOGRAM4_UPSAMPLE_GEMMA
+    return _runtime().IDEOGRAM4_UPSAMPLE_REMOTE if _ideogram4_remote_api_key() else _runtime().IDEOGRAM4_UPSAMPLE_GEMMA
 
 def _ideogram4_remote_upsample(prompt: str, width: int, height: int, api_key: str = "") -> str:
     key = _ideogram4_remote_api_key(api_key)
     if not key:
         raise UserInputError("Set IDEOGRAM_API_KEY or enter an Ideogram API key for remote prompt upsampling.")
     aspect_ratio = _ideogram4_aspect_ratio(width, height)
-    magic_prompt_cls = _get_ideogram4()["MAGIC_PROMPTS"]["ideogram-4-v1"]
+    magic_prompt_cls = _runtime()._get_ideogram4()["MAGIC_PROMPTS"]["ideogram-4-v1"]
     try:
         magic = magic_prompt_cls(api_key=key, strip_bboxes=False)
     except TypeError:
@@ -317,13 +313,13 @@ def _ideogram4_upsample_prompt(
     api_key: str = "",
     chat_model: str | None = None,
 ) -> str:
-    if upsampler == IDEOGRAM4_UPSAMPLE_NONE:
+    if upsampler == _runtime().IDEOGRAM4_UPSAMPLE_NONE:
         return prompt
-    if upsampler not in IDEOGRAM4_UPSAMPLERS:
+    if upsampler not in _runtime().IDEOGRAM4_UPSAMPLERS:
         raise UserInputError(f"Unknown Ideogram prompt upsampler: {upsampler}")
     cache_model = _ideogram4_upsample_cache_model(upsampler, chat_model)
-    upsample_t0 = time.time()
-    log.info(
+    upsample_t0 = _runtime().time.time()
+    _runtime().log.info(
         "Ideogram prompt upsampling started | upsampler=%s | size=%sx%s | cache=%s | gemma_tokens=%s | gemma_thinking=%s",
         upsampler,
         int(width),
@@ -335,21 +331,21 @@ def _ideogram4_upsample_prompt(
     if reuse_cache:
         cached = _ideogram4_get_cached_upsample(prompt, upsampler, cache_model)
         if cached:
-            log.info(
+            _runtime().log.info(
                 "Ideogram prompt upsampling finished | upsampler=%s | source=cache | elapsed=%.2fs | prompt_chars=%d | result_chars=%d",
                 upsampler,
-                time.time() - upsample_t0,
+                _runtime().time.time() - upsample_t0,
                 len(prompt or ""),
                 len(cached or ""),
             )
             return cached
 
-    if upsampler == IDEOGRAM4_UPSAMPLE_REMOTE:
+    if upsampler == _runtime().IDEOGRAM4_UPSAMPLE_REMOTE:
         source = "ideogram_api"
     else:
         source = f"chat_model:{cache_model}"
     try:
-        if upsampler == IDEOGRAM4_UPSAMPLE_REMOTE:
+        if upsampler == _runtime().IDEOGRAM4_UPSAMPLE_REMOTE:
             result = _ideogram4_remote_upsample(prompt, width, height, api_key)
         else:
             result = _ideogram4_local_upsample_gemma(
@@ -357,19 +353,19 @@ def _ideogram4_upsample_prompt(
                 chat_model=cache_model or chat_model,
             )
     except Exception:
-        log.exception(
+        _runtime().log.exception(
             "Ideogram prompt upsampling failed | upsampler=%s | source=%s | elapsed=%.2fs",
             upsampler,
             source,
-            time.time() - upsample_t0,
+            _runtime().time.time() - upsample_t0,
         )
         raise
 
-    log.info(
+    _runtime().log.info(
         "Ideogram prompt upsampling finished | upsampler=%s | source=%s | elapsed=%.2fs | prompt_chars=%d | result_chars=%d",
         upsampler,
         source,
-        time.time() - upsample_t0,
+        _runtime().time.time() - upsample_t0,
         len(prompt or ""),
         len(result or ""),
     )
@@ -394,7 +390,7 @@ def _ideogram4_normalize_caption_for_model(
     except Exception:
         caption = _ideogram4_repair_caption(caption, aspect_ratio)
 
-    mods = _get_ideogram4()
+    mods = _runtime()._get_ideogram4()
     if strip_prompt:
         return mods["strip_aspect_ratio_and_bboxes"](caption)
     return mods["strip_aspect_ratio"](caption)
@@ -417,9 +413,9 @@ def _ideogram4_plain_prompt_designer_caption(prompt: str) -> str:
     return json.dumps(caption, ensure_ascii=False, separators=(",", ":"))
 
 def _ideogram4_cached_editor_prompt(prompt: str, upsampler: str) -> tuple[str, str]:
-    if not prompt or upsampler == IDEOGRAM4_UPSAMPLE_NONE:
+    if not prompt or upsampler == _runtime().IDEOGRAM4_UPSAMPLE_NONE:
         return "", ""
-    if upsampler not in IDEOGRAM4_UPSAMPLERS:
+    if upsampler not in _runtime().IDEOGRAM4_UPSAMPLERS:
         return "", ""
     cache_model = _ideogram4_upsample_cache_model(upsampler)
     cached = _ideogram4_get_cached_upsample(prompt, upsampler, cache_model)
@@ -441,9 +437,9 @@ def prepare_ideogram_json_designer_payload(
 
     caption = ""
     source = ""
-    metadata = _read_ideogram4_prompt_metadata(raw_path)
+    metadata = _runtime()._read_ideogram4_prompt_metadata(raw_path)
     if metadata:
-        caption = _ideogram4_editor_prompt_from_candidates(
+        caption = _runtime()._ideogram4_editor_prompt_from_candidates(
             metadata.get("editor_prompt"),
             metadata.get("upsampled_prompt"),
             metadata.get("model_prompt"),
@@ -456,9 +452,9 @@ def prepare_ideogram_json_designer_payload(
             aspect_ratio = _ideogram4_aspect_ratio(width, height)
 
     if not caption:
-        caption, source = _ideogram4_cached_editor_prompt(prompt, upsampler or IDEOGRAM4_UPSAMPLE_NONE)
+        caption, source = _ideogram4_cached_editor_prompt(prompt, upsampler or _runtime().IDEOGRAM4_UPSAMPLE_NONE)
 
-    if not caption and _ideogram4_prompt_looks_like_json(prompt):
+    if not caption and _runtime()._ideogram4_prompt_looks_like_json(prompt):
         caption = prompt
         source = "current_prompt_json"
 
@@ -467,7 +463,7 @@ def prepare_ideogram_json_designer_payload(
         source = "plain_prompt"
 
     payload = {
-        "url": IDEOGRAM4_JSON_DESIGNER_PATH,
+        "url": _runtime().IDEOGRAM4_JSON_DESIGNER_PATH,
         "caption": caption,
         "plain_prompt": prompt,
         "source": source,
@@ -475,7 +471,7 @@ def prepare_ideogram_json_designer_payload(
         "width": width,
         "height": height,
         "apply": {
-            "upsampler": IDEOGRAM4_UPSAMPLE_NONE,
+            "upsampler": _runtime().IDEOGRAM4_UPSAMPLE_NONE,
             "strip_prompt": False,
         },
     }
@@ -507,4 +503,3 @@ __all__ = (
     '_ideogram4_cached_editor_prompt',
     'prepare_ideogram_json_designer_payload',
 )
-_seal_runtime_module(globals())

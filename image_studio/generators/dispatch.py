@@ -1,270 +1,317 @@
-"""Extracted runtime implementation."""
+"""Typed image workflow dispatch with legacy Gradio endpoint adapters."""
 
 from __future__ import annotations
-from dataclasses import asdict
 
+from collections.abc import Callable
+from dataclasses import asdict
+from typing import Any
+
+from image_studio.core.executor import ModelExecutor
 from image_studio.core.models import Operation
 from image_studio.progress import NO_PROGRESS
 
-# --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+from .base import EditRequest, GenerationRequest
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
+GENERATION_MODEL_IDS = {
+    "Qwen Image": "qwen-image",
+    "Z-Image": "z-image",
+    "HiDream-O1": "hidream-o1",
+    "Ideogram 4": "ideogram-4",
+    "Boogu-Image": "boogu-image",
+    "Krea2": "krea2",
+}
+
+EDIT_MODEL_IDS = {
+    "Qwen Image Edit": "qwen-image-edit",
+    "HiDream-O1": "hidream-o1",
+    "Boogu-Image": "boogu-image",
+}
+
+SEEDVR2_DIT_MODELS = [
+    "seedvr2_ema_3b_fp8_e4m3fn.safetensors",
+    "seedvr2_ema_3b_fp16.safetensors",
+    "seedvr2_ema_3b-Q4_K_M.gguf",
+    "seedvr2_ema_3b-Q8_0.gguf",
+    "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors",
+    "seedvr2_ema_7b_fp16.safetensors",
+    "seedvr2_ema_7b-Q4_K_M.gguf",
+    "seedvr2_ema_7b_sharp_fp8_e4m3fn_mixed_block35_fp16.safetensors",
+    "seedvr2_ema_7b_sharp_fp16.safetensors",
+    "seedvr2_ema_7b_sharp-Q4_K_M.gguf",
+]
+SEEDVR2_DEFAULT_DIT = "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors"
+
+_executor: ModelExecutor | None = None
+_seedvr2_available: Callable[[], bool] | None = None
+_seedvr2_loader: Callable[[], dict[str, Any]] | None = None
+
+
+def configure_dispatch(
+    executor: ModelExecutor,
+    *,
+    seedvr2_available: Callable[[], bool],
+    seedvr2_loader: Callable[[], dict[str, Any]],
+) -> None:
+    """Inject application-owned dispatch collaborators at composition time."""
+    global _executor, _seedvr2_available, _seedvr2_loader
+    _executor = executor
+    _seedvr2_available = seedvr2_available
+    _seedvr2_loader = seedvr2_loader
+
 
 def _get_seedvr2_model_options() -> tuple[list[str], str, bool]:
-    if not is_seedvr2_available():
+    if _seedvr2_available is None or _seedvr2_loader is None:
+        return SEEDVR2_DIT_MODELS, SEEDVR2_DEFAULT_DIT, False
+    if not _seedvr2_available():
         return SEEDVR2_DIT_MODELS, SEEDVR2_DEFAULT_DIT, False
     try:
-        s = _get_seedvr2()
-        models = s["get_available_dit_models"]()
-        default = SEEDVR2_DEFAULT_DIT if SEEDVR2_DEFAULT_DIT in models else s["DEFAULT_DIT"]
+        seedvr2 = _seedvr2_loader()
+        models = seedvr2["get_available_dit_models"]()
+        default = (
+            SEEDVR2_DEFAULT_DIT
+            if SEEDVR2_DEFAULT_DIT in models
+            else seedvr2["DEFAULT_DIT"]
+        )
         return models, default, True
     except Exception:
         return SEEDVR2_DIT_MODELS, SEEDVR2_DEFAULT_DIT, False
 
-def _run_zimage_generation(req: GenerationRequest, progress=NO_PROGRESS):
-    if req.zimage_version == "Turbo":
-        return run_zimage(
-            req.prompt, req.width, req.height, req.steps, req.guidance,
-            req.full_pid_enabled, req.full_pid_ckpt, req.full_pid_steps, req.full_pid_cfg,
-            req.seed, progress=progress,
-        )
-    return run_zimage_full(
-        req.prompt, req.neg_prompt, req.width, req.height,
-        req.full_steps, req.full_guidance,
-        req.full_pid_enabled, req.full_pid_ckpt, req.full_pid_steps, req.full_pid_cfg,
-        req.seed, progress=progress,
-    )
 
-def _run_hidream_generation(req: GenerationRequest, progress=NO_PROGRESS):
-    model_key = HIDREAM_MODE_KEYS.get(req.hidream_version, MODEL_HIDREAM_O1_DEV)
-    return run_hidream_generate(
-        req.prompt, req.width, req.height, req.seed,
-        model_key=model_key, progress=progress,
-    )
-
-def _run_ideogram_generation(req: GenerationRequest, progress=NO_PROGRESS):
-    return run_ideogram4_generate(
-        req.prompt, req.width, req.height,
-        req.ideogram_pipeline, req.ideogram_sampler, req.ideogram_upsampler,
-        req.ideogram_strip_prompt, req.ideogram_reuse_cache,
-        req.ideogram_gemma_tokens, req.ideogram_gemma_thinking,
-        req.ideogram_cfg_one_final_steps,
-        req.ideogram_lora_mode, req.ideogram_lora_weight,
-        req.ideogram_lora_cond_strength, req.ideogram_lora_uncond_strength,
-        req.full_pid_enabled, req.full_pid_ckpt, req.full_pid_steps, req.full_pid_cfg,
-        req.ideogram_api_key, req.seed, progress=progress,
-    )
-
-def _run_boogu_generation(req: GenerationRequest, progress=NO_PROGRESS):
-    return run_boogu_generate(
-        req.prompt, req.neg_prompt, req.width, req.height,
-        req.boogu_version, req.boogu_steps, req.boogu_base_guidance,
-        req.seed, progress=progress,
-    )
-
-def _run_krea2_generation(req: GenerationRequest, progress=NO_PROGRESS):
-    return run_krea2_generate(
-        req.prompt, req.width, req.height,
-        req.krea2_steps, req.krea2_cfg,
-        req.full_pid_enabled, req.full_pid_ckpt, req.full_pid_steps, req.full_pid_cfg,
-        req.seed, progress=progress,
-    )
-
-def _run_qwen_generation(req: GenerationRequest, progress=NO_PROGRESS):
-    return run_generate(
-        req.prompt, req.neg_prompt, req.width, req.height, req.cfg,
-        req.full_pid_enabled, req.full_pid_ckpt, req.full_pid_steps, req.full_pid_cfg,
-        req.seed, progress=progress,
-    )
-
-def _run_generation_request(req: GenerationRequest, progress=NO_PROGRESS):
-    values = asdict(req)
+def generation_parameters(request: GenerationRequest) -> dict[str, Any]:
     common = {
-        "prompt": req.prompt,
-        "width": req.width,
-        "height": req.height,
-        "seed": req.seed,
-        "pid_enabled": req.full_pid_enabled,
-        "pid_ckpt": req.full_pid_ckpt,
-        "pid_steps": req.full_pid_steps,
-        "pid_cfg": req.full_pid_cfg,
+        "prompt": request.prompt,
+        "width": request.width,
+        "height": request.height,
+        "seed": request.seed,
+        "pid_enabled": request.full_pid_enabled,
+        "pid_ckpt": request.full_pid_ckpt,
+        "pid_steps": request.full_pid_steps,
+        "pid_cfg": request.full_pid_cfg,
     }
-    model_parameters = {
-        "Qwen Image": {
+    by_model = {
+        "qwen-image": {
             **common,
-            "neg_prompt": req.neg_prompt,
-            "cfg": req.cfg,
+            "neg_prompt": request.neg_prompt,
+            "cfg": request.cfg,
         },
-        "Z-Image": {
+        "z-image": {
             **common,
-            "neg_prompt": req.neg_prompt,
-            "version": req.zimage_version,
-            "steps": req.steps,
-            "guidance": req.guidance,
-            "full_steps": req.full_steps,
-            "full_guidance": req.full_guidance,
+            "neg_prompt": request.neg_prompt,
+            "version": request.zimage_version,
+            "steps": request.steps,
+            "guidance": request.guidance,
+            "full_steps": request.full_steps,
+            "full_guidance": request.full_guidance,
         },
-        HIDREAM_O1_MODE: {
-            "prompt": req.prompt,
-            "width": req.width,
-            "height": req.height,
-            "version": req.hidream_version,
-            "seed": req.seed,
+        "hidream-o1": {
+            "prompt": request.prompt,
+            "width": request.width,
+            "height": request.height,
+            "version": request.hidream_version,
+            "seed": request.seed,
         },
-        BOOGU_IMAGE_MODE: {
-            "prompt": req.prompt,
-            "neg_prompt": req.neg_prompt,
-            "width": req.width,
-            "height": req.height,
-            "version": req.boogu_version,
-            "steps": req.boogu_steps,
-            "base_guidance": req.boogu_base_guidance,
-            "seed": req.seed,
+        "boogu-image": {
+            "prompt": request.prompt,
+            "neg_prompt": request.neg_prompt,
+            "width": request.width,
+            "height": request.height,
+            "version": request.boogu_version,
+            "steps": request.boogu_steps,
+            "base_guidance": request.boogu_base_guidance,
+            "seed": request.seed,
         },
-        KREA2_MODE: {
+        "krea2": {
             **common,
-            "steps": req.krea2_steps,
-            "cfg": req.krea2_cfg,
+            "steps": request.krea2_steps,
+            "cfg": request.krea2_cfg,
         },
-        IDEOGRAM4_MODE: {
+        "ideogram-4": {
             **common,
-            "pipeline": req.ideogram_pipeline,
-            "sampler": req.ideogram_sampler,
-            "upsampler": req.ideogram_upsampler,
-            "strip_prompt": req.ideogram_strip_prompt,
-            "reuse_cache": req.ideogram_reuse_cache,
-            "gemma_tokens": req.ideogram_gemma_tokens,
-            "gemma_thinking": req.ideogram_gemma_thinking,
-            "cfg_one_final_steps": req.ideogram_cfg_one_final_steps,
-            "lora_mode": req.ideogram_lora_mode,
-            "lora_weight": req.ideogram_lora_weight,
-            "lora_cond_strength": req.ideogram_lora_cond_strength,
-            "lora_uncond_strength": req.ideogram_lora_uncond_strength,
-            "api_key": req.ideogram_api_key,
+            "pipeline": request.ideogram_pipeline,
+            "sampler": request.ideogram_sampler,
+            "upsampler": request.ideogram_upsampler,
+            "strip_prompt": request.ideogram_strip_prompt,
+            "reuse_cache": request.ideogram_reuse_cache,
+            "gemma_tokens": request.ideogram_gemma_tokens,
+            "gemma_thinking": request.ideogram_gemma_thinking,
+            "cfg_one_final_steps": request.ideogram_cfg_one_final_steps,
+            "lora_mode": request.ideogram_lora_mode,
+            "lora_weight": request.ideogram_lora_weight,
+            "lora_cond_strength": request.ideogram_lora_cond_strength,
+            "lora_uncond_strength": request.ideogram_lora_uncond_strength,
+            "api_key": request.ideogram_api_key,
         },
     }
-    parameters = model_parameters.get(req.mode, values)
-    return IMAGE_MODEL_EXECUTOR.execute(
-        req.mode,
+    model_id = GENERATION_MODEL_IDS.get(request.mode, request.mode)
+    return by_model.get(model_id, asdict(request))
+
+
+def edit_parameters(request: EditRequest) -> dict[str, Any]:
+    common = {
+        "img1": request.img1,
+        "img2": request.img2,
+        "img3": request.img3,
+        "prompt": request.prompt,
+    }
+    by_model = {
+        "qwen-image-edit": {
+            **common,
+            "neg_prompt": request.neg_prompt,
+            "cfg": request.cfg,
+            "seed": request.qwen_seed,
+        },
+        "hidream-o1": {
+            **common,
+            "width": request.width,
+            "height": request.height,
+            "keep_original_aspect": request.keep_original_aspect,
+            "version": request.hidream_version,
+            "seed": request.hidream_seed,
+        },
+        "boogu-image": {
+            **common,
+            "neg_prompt": request.neg_prompt,
+            "version": request.boogu_version,
+            "width": request.width,
+            "height": request.height,
+            "keep_original_aspect": request.keep_original_aspect,
+            "steps": request.boogu_steps,
+            "text_guidance": request.boogu_text_guidance,
+            "image_guidance": request.boogu_image_guidance,
+            "seed": request.boogu_seed,
+        },
+    }
+    model_id = EDIT_MODEL_IDS.get(request.model_name, request.model_name)
+    return by_model.get(model_id, asdict(request))
+
+
+def run_generation_request(
+    executor: ModelExecutor,
+    request: GenerationRequest,
+    progress: Any = NO_PROGRESS,
+) -> Any:
+    model_id = GENERATION_MODEL_IDS.get(request.mode, request.mode)
+    return executor.execute(
+        model_id,
         Operation.IMAGE_GENERATE,
-        parameters,
+        generation_parameters(request),
         progress,
-        strict=req.mode in model_parameters,
+        strict=model_id in GENERATION_MODEL_IDS.values(),
     )
 
-def _run_hidream_edit_request(req: EditRequest, progress=NO_PROGRESS):
-    model_key = HIDREAM_MODE_KEYS.get(req.hidream_version, MODEL_HIDREAM_O1_DEV)
-    return run_hidream_edit(
-        req.img1, req.img2, req.img3, req.prompt, req.width, req.height,
-        req.keep_original_aspect, req.hidream_seed,
-        model_key=model_key, progress=progress,
-    )
 
-def _run_boogu_edit_request(req: EditRequest, progress=NO_PROGRESS):
-    return run_boogu_edit(
-        req.img1, req.img2, req.img3, req.prompt, req.neg_prompt,
-        req.boogu_version,
-        req.width, req.height, req.keep_original_aspect,
-        req.boogu_steps, req.boogu_text_guidance, req.boogu_image_guidance, req.boogu_seed,
-        progress=progress,
-    )
-
-def _run_qwen_edit_request(req: EditRequest, progress=NO_PROGRESS):
-    return run_edit(
-        req.img1, req.img2, req.img3, req.prompt, req.neg_prompt,
-        req.cfg, req.qwen_seed, progress=progress,
-    )
-
-def _run_edit_request(req: EditRequest, progress=NO_PROGRESS):
-    common = {
-        "img1": req.img1,
-        "img2": req.img2,
-        "img3": req.img3,
-        "prompt": req.prompt,
-    }
-    model_parameters = {
-        "Qwen Image Edit": {
-            **common,
-            "neg_prompt": req.neg_prompt,
-            "cfg": req.cfg,
-            "seed": req.qwen_seed,
-        },
-        HIDREAM_O1_MODE: {
-            **common,
-            "width": req.width,
-            "height": req.height,
-            "keep_original_aspect": req.keep_original_aspect,
-            "version": req.hidream_version,
-            "seed": req.hidream_seed,
-        },
-        BOOGU_IMAGE_MODE: {
-            **common,
-            "neg_prompt": req.neg_prompt,
-            "version": req.boogu_version,
-            "width": req.width,
-            "height": req.height,
-            "keep_original_aspect": req.keep_original_aspect,
-            "steps": req.boogu_steps,
-            "text_guidance": req.boogu_text_guidance,
-            "image_guidance": req.boogu_image_guidance,
-            "seed": req.boogu_seed,
-        },
-    }
-    parameters = model_parameters.get(req.model_name, asdict(req))
-    return IMAGE_MODEL_EXECUTOR.execute(
-        req.model_name,
+def run_edit_request(
+    executor: ModelExecutor,
+    request: EditRequest,
+    progress: Any = NO_PROGRESS,
+) -> Any:
+    model_id = EDIT_MODEL_IDS.get(request.model_name, request.model_name)
+    return executor.execute(
+        model_id,
         Operation.IMAGE_EDIT,
-        parameters,
+        edit_parameters(request),
         progress,
-        strict=req.model_name in model_parameters,
+        strict=model_id in EDIT_MODEL_IDS.values(),
     )
+
+
+def _run_generation_request(
+    request: GenerationRequest,
+    progress: Any = NO_PROGRESS,
+) -> Any:
+    if _executor is None:
+        raise RuntimeError("Image model executor is not configured.")
+    return run_generation_request(_executor, request, progress)
+
+
+def _run_edit_request(request: EditRequest, progress: Any = NO_PROGRESS) -> Any:
+    if _executor is None:
+        raise RuntimeError("Image model executor is not configured.")
+    return run_edit_request(_executor, request, progress)
+
 
 def _dispatch_generate(
-    mode, prompt, neg_prompt, width, height,
-    cfg, steps, guidance, full_steps, full_guidance,
-    full_pid_enabled, full_pid_ckpt, full_pid_steps, full_pid_cfg,
-    boogu_version, boogu_steps, boogu_base_guidance,
-    krea2_steps, krea2_cfg,
-    ideogram_pipeline, ideogram_sampler, ideogram_upsampler, ideogram_strip_prompt,
-    ideogram_reuse_cache, ideogram_gemma_tokens, ideogram_gemma_thinking,
+    mode,
+    prompt,
+    neg_prompt,
+    width,
+    height,
+    cfg,
+    steps,
+    guidance,
+    full_steps,
+    full_guidance,
+    full_pid_enabled,
+    full_pid_ckpt,
+    full_pid_steps,
+    full_pid_cfg,
+    boogu_version,
+    boogu_steps,
+    boogu_base_guidance,
+    krea2_steps,
+    krea2_cfg,
+    ideogram_pipeline,
+    ideogram_sampler,
+    ideogram_upsampler,
+    ideogram_strip_prompt,
+    ideogram_reuse_cache,
+    ideogram_gemma_tokens,
+    ideogram_gemma_thinking,
     ideogram_cfg_one_final_steps,
-    ideogram_lora_mode, ideogram_lora_weight,
-    ideogram_lora_cond_strength, ideogram_lora_uncond_strength,
+    ideogram_lora_mode,
+    ideogram_lora_weight,
+    ideogram_lora_cond_strength,
+    ideogram_lora_uncond_strength,
     ideogram_api_key,
-    seed, zimage_version, hidream_version, progress=NO_PROGRESS,
-):
-    """Route generation requests to the model-specific endpoint."""
-    req = GenerationRequest.from_mapping(locals())
-    return _run_generation_request(req, progress=progress)
-
-def _dispatch_edit(
-    model_name, img1, img2, img3, prompt, neg_prompt, cfg, qwen_seed,
-    boogu_version, boogu_steps, boogu_text_guidance, boogu_image_guidance, boogu_seed,
-    width, height, keep_original_aspect, hidream_seed, hidream_version,
+    seed,
+    zimage_version,
+    hidream_version,
     progress=NO_PROGRESS,
 ):
-    req = EditRequest.from_mapping(locals())
-    return _run_edit_request(req, progress=progress)
+    """Preserve the established 35-input Gradio endpoint."""
+    request = GenerationRequest.from_mapping(locals())
+    return _run_generation_request(request, progress)
+
+
+def _dispatch_edit(
+    model_name,
+    img1,
+    img2,
+    img3,
+    prompt,
+    neg_prompt,
+    cfg,
+    qwen_seed,
+    boogu_version,
+    boogu_steps,
+    boogu_text_guidance,
+    boogu_image_guidance,
+    boogu_seed,
+    width,
+    height,
+    keep_original_aspect,
+    hidream_seed,
+    hidream_version,
+    progress=NO_PROGRESS,
+):
+    """Preserve the established 18-input Gradio endpoint."""
+    request = EditRequest.from_mapping(locals())
+    return _run_edit_request(request, progress)
+
 
 __all__ = (
-    '_get_seedvr2_model_options',
-    '_run_zimage_generation',
-    '_run_hidream_generation',
-    '_run_ideogram_generation',
-    '_run_boogu_generation',
-    '_run_krea2_generation',
-    '_run_qwen_generation',
-    '_run_generation_request',
-    '_run_hidream_edit_request',
-    '_run_boogu_edit_request',
-    '_run_qwen_edit_request',
-    '_run_edit_request',
-    '_dispatch_generate',
-    '_dispatch_edit',
+    "EDIT_MODEL_IDS",
+    "GENERATION_MODEL_IDS",
+    "SEEDVR2_DEFAULT_DIT",
+    "SEEDVR2_DIT_MODELS",
+    "_dispatch_edit",
+    "_dispatch_generate",
+    "_get_seedvr2_model_options",
+    "_run_edit_request",
+    "_run_generation_request",
+    "configure_dispatch",
+    "edit_parameters",
+    "generation_parameters",
+    "run_edit_request",
+    "run_generation_request",
 )
-_seal_runtime_module(globals())

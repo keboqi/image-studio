@@ -1,20 +1,27 @@
 """Output paths, containment, previews, and atomic image saves."""
 
 from __future__ import annotations
-from image_studio.errors import UserInputError
 
 import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
 from PIL import Image
+
+from image_studio.errors import UserInputError
 
 log = logging.getLogger(__name__)
 
 OUTPUT_PREVIEW_SUFFIX = "_preview.webp"
 OUTPUT_PREVIEW_QUALITY = 90
+
+
+class MetadataStore(Protocol):
+    def write(self, raw_path: str, metadata: dict[str, Any]) -> None: ...
+
+    def read(self, raw_path: str) -> dict[str, Any] | None: ...
 
 
 @dataclass(frozen=True)
@@ -116,32 +123,49 @@ class OutputStore:
         return preview, raw
 
 
-# --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+_default_store: OutputStore | None = None
+_default_metadata_store: MetadataStore | None = None
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
+
+def configure_output_storage(
+    store: OutputStore,
+    metadata_store: MetadataStore,
+) -> None:
+    """Configure compatibility helpers at the application boundary."""
+    global _default_store, _default_metadata_store
+    _default_store = store
+    _default_metadata_store = metadata_store
+
+
+def _store() -> OutputStore:
+    if _default_store is None:
+        raise RuntimeError("Output storage is not configured.")
+    return _default_store
+
+
+def _metadata_store() -> MetadataStore:
+    if _default_metadata_store is None:
+        raise RuntimeError("Output metadata storage is not configured.")
+    return _default_metadata_store
+
 
 def _path_from_gradio_value(value: Any) -> Any:
-    return output_store.path_from_value(value)
+    return _store().path_from_value(value)
 
 def _output_dir_path_for_basename(path: str) -> str | None:
-    return output_store.path_for_basename(path)
+    return _store().path_for_basename(path)
 
 def preview_path_for_raw_image(raw_path: str) -> str:
-    return output_store.preview_path(raw_path)
+    return _store().preview_path(raw_path)
 
 def raw_image_path_for_preview(path: str) -> str:
-    return output_store.raw_path(path)
+    return _store().raw_path(path)
 
 def resolve_raw_image_payload(value: Any) -> Any:
-    return output_store.resolve_payload(value)
+    return _store().resolve_payload(value)
 
 def _resolve_output_file_path(path: str) -> str | None:
-    return output_store.contained_path(path)
+    return _store().contained_path(path)
 
 def _ideogram4_prompt_looks_like_json(prompt: Any) -> bool:
     if not isinstance(prompt, str):
@@ -165,7 +189,7 @@ def _ideogram4_editor_prompt_from_candidates(*prompts: Any) -> str:
 def _write_ideogram4_prompt_metadata(raw_path: str, metadata: dict[str, Any]) -> None:
     try:
         raw_path = raw_image_path_for_preview(raw_path)
-        _ideogram4_prompt_metadata_store.write(raw_path, metadata)
+        _metadata_store().write(raw_path, metadata)
     except OSError as exc:
         log.warning("Could not write Ideogram prompt metadata for %s: %s", raw_path, exc)
 
@@ -173,7 +197,7 @@ def _read_ideogram4_prompt_metadata(raw_path: Any) -> dict[str, Any] | None:
     raw_path = resolve_raw_image_payload(raw_path)
     if not isinstance(raw_path, str):
         return None
-    return _ideogram4_prompt_metadata_store.read(raw_image_path_for_preview(raw_path))
+    return _metadata_store().read(raw_image_path_for_preview(raw_path))
 
 def require_gallery_image_path(path: Any) -> str:
     raw_path = resolve_raw_image_payload(path)
@@ -185,13 +209,13 @@ def require_gallery_image_path(path: Any) -> str:
     return safe_path
 
 def _save_webp_preview(preview_path: str, image: Image.Image) -> None:
-    output_store.save_preview(preview_path, image)
+    _store().save_preview(preview_path, image)
 
 def ensure_webp_preview(raw_path: str) -> str:
-    return output_store.ensure_preview(raw_path)
+    return _store().ensure_preview(raw_path)
 
 def related_image_artifact_paths(path: str) -> list[str]:
-    return output_store.related_paths(path)
+    return _store().related_paths(path)
 
 def coerce_rgb_image(image: Any) -> Image.Image:
     image = resolve_raw_image_payload(image)
@@ -205,7 +229,7 @@ def collect_rgb_images(*images: Any) -> list[Image.Image]:
     return [coerce_rgb_image(image) for image in images if image is not None]
 
 def save_output_image_pair(prefix: str, image: Image.Image) -> tuple[str, str]:
-    return output_store.save_image_pair(prefix, image)
+    return _store().save_image_pair(prefix, image)
 
 __all__ = (
     '_path_from_gradio_value',
@@ -225,5 +249,5 @@ __all__ = (
     'coerce_rgb_image',
     'collect_rgb_images',
     'save_output_image_pair',
+    'configure_output_storage',
 )
-_seal_runtime_module(globals())

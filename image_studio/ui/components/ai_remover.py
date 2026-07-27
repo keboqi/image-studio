@@ -1,16 +1,14 @@
 """Extracted runtime implementation."""
 
 from __future__ import annotations
-from image_studio.ui.components.base import ComponentSet
 
 # --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+from dataclasses import dataclass
+from typing import Any
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
+from image_studio.runtime_access import runtime_namespace as _runtime
+from image_studio.ui.components.base import ComponentSet
+
 
 @dataclass
 class AiRemoverTab(ComponentSet):
@@ -25,35 +23,35 @@ class AiRemoverTab(ComponentSet):
     status: Any
 
 
-def _build_ai_remover_tab() -> dict[str, Any]:
-    with gr.Tab("AI Remover", id=TAB_AI_REMOVER):
-        gr.Markdown(
+def _build_ai_remover_tab() -> AiRemoverTab:
+    with _runtime().gr.Tab("AI Remover", id=_runtime().TAB_AI_REMOVER):
+        _runtime().gr.Markdown(
             "Remove visible/invisible watermarks and metadata from an image using **`remove-ai-watermarks`**."
         )
-        with gr.Row(equal_height=False):
-            with gr.Column(scale=5):
-                air_img = gr.Image(label="Source Image", type="pil", height=320)
-                with gr.Group():
-                    air_mode = gr.Dropdown(
+        with _runtime().gr.Row(equal_height=False):
+            with _runtime().gr.Column(scale=5):
+                air_img = _runtime().gr.Image(label="Source Image", type="pil", height=320)
+                with _runtime().gr.Group():
+                    air_mode = _runtime().gr.Dropdown(
                         choices=["all", "visible", "invisible", "metadata"],
                         value="all",
                         label="Removal Mode (Subcommand)",
                     )
-                    air_humanize = gr.Slider(
+                    air_humanize = _runtime().gr.Slider(
                         minimum=0.0,
                         maximum=6.0,
                         value=0.0,
                         step=0.5,
                         label="Analog Humanizer",
                     )
-                air_btn = gr.Button("Remove Watermarks", variant="primary", elem_id="ai-remover-btn")
-            with gr.Column(scale=5):
-                air_out = gr.Image(label="Cleaned Preview", type="filepath", height=520, interactive=False, format="webp")
-                with gr.Row():
-                    air_to_edit = gr.Button("Send to Edit", size="sm", elem_classes=["send-btn"])
-                    air_to_upscale = gr.Button("Send to Upscale", size="sm", elem_classes=["send-btn"])
-                air_st = gr.Markdown("", elem_id="ai-remover-status")
-                air_raw = gr.File(label="Raw PNG Download", interactive=False)
+                air_btn = _runtime().gr.Button("Remove Watermarks", variant="primary", elem_id="ai-remover-btn")
+            with _runtime().gr.Column(scale=5):
+                air_out = _runtime().gr.Image(label="Cleaned Preview", type="filepath", height=520, interactive=False, format="webp")
+                with _runtime().gr.Row():
+                    air_to_edit = _runtime().gr.Button("Send to Edit", size="sm", elem_classes=["send-btn"])
+                    air_to_upscale = _runtime().gr.Button("Send to Upscale", size="sm", elem_classes=["send-btn"])
+                air_st = _runtime().gr.Markdown("", elem_id="ai-remover-status")
+                air_raw = _runtime().gr.File(label="Raw PNG Download", interactive=False)
     return AiRemoverTab(**{
         "image": air_img,
         "mode": air_mode,
@@ -69,4 +67,3 @@ def _build_ai_remover_tab() -> dict[str, Any]:
 __all__ = (
     '_build_ai_remover_tab',
 )
-_seal_runtime_module(globals())

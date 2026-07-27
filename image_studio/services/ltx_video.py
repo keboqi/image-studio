@@ -1,9 +1,9 @@
 """LTX-Web process ownership and health client."""
 
 from __future__ import annotations
-from image_studio.errors import BackendUnavailableError, UserInputError
-from image_studio.progress import NO_PROGRESS
 
+import base64
+import io
 import json
 import logging
 import os
@@ -12,15 +12,35 @@ import sys
 import threading
 import time
 import urllib.request
+from dataclasses import dataclass
+from typing import Any
 
-from ..errors import BackendUnavailableError
+from image_studio.errors import BackendUnavailableError, UserInputError
+from image_studio.progress import NO_PROGRESS
+
 from ..infra.managed_service import ManagedService
+from ..storage.output_store import coerce_rgb_image
+from ..validation import snap_ltx_audio_video_frames
 
 log = logging.getLogger(__name__)
 
 LTX_DISTILLED_STEPS = 8
 LTX_VIDEO_MAX_FRAMES = 1201
 LTX_AUDIO_VIDEO_RESOLUTION_MULTIPLE = 128
+LTX_IC_LORA_OFF = "Off"
+LTX_IC_LORA_OPTIONS = {
+    LTX_IC_LORA_OFF: None,
+    "Ingredients / Reference Sheet": "ltx-2.3-22b-ic-lora-ingredients-0.9",
+    "Union Control (Depth/Canny/Pose)": "ltx-2.3-22b-ic-lora-union-control-ref0.5",
+    "Motion Track Control": "ltx-2.3-22b-ic-lora-motion-track-control-ref0.5",
+    "Day to Night": "ltx-2.3-22b-ic-lora-day-to-night-0.9",
+    "Colorization": "ltx-2.3-22b-ic-lora-colorization-0.9",
+    "Decompression": "ltx-2.3-22b-ic-lora-decompression-0.9",
+    "Deblur": "ltx-2.3-22b-ic-lora-deblur-0.9",
+    "In / Outpainting": "ltx-2.3-22b-ic-lora-in-outpainting-0.9",
+    "Water Simulation": "ltx-2.3-22b-ic-lora-water-simulation-0.9",
+}
+LTX_IC_LORA_CHOICES = list(LTX_IC_LORA_OPTIONS)
 
 
 class LtxVideoService(ManagedService):
@@ -99,14 +119,53 @@ class LtxVideoService(ManagedService):
             return False
 
 
-# --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+@dataclass(frozen=True)
+class LtxWorkflow:
+    backend: LtxVideoService
+    api_base: str
+    output_dir: str
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
+
+_workflow: LtxWorkflow | None = None
+
+
+def configure_ltx_workflow(workflow: LtxWorkflow) -> None:
+    global _workflow
+    _workflow = workflow
+
+
+def _configured_workflow() -> LtxWorkflow:
+    if _workflow is None:
+        raise RuntimeError("LTX workflow is not configured.")
+    return _workflow
+
+
+def _resolve_video_path(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        for key in ("path", "name", "video"):
+            if value.get(key):
+                return str(value[key])
+    for key in ("path", "name"):
+        path = getattr(value, key, None)
+        if path:
+            return str(path)
+    return None
+
+
+def _require_prompt(prompt: str, message: str) -> str:
+    prompt = (prompt or "").strip()
+    if not prompt:
+        raise UserInputError(message)
+    return prompt
+
+
+def _ok_status(elapsed: float, *parts: Any) -> str:
+    return " | ".join([f"OK **{elapsed:.1f}s**", *(str(part) for part in parts)])
+
 
 def _max_ltx_audio_video_frames() -> int:
     return ((LTX_VIDEO_MAX_FRAMES - 9) // 16) * 16 + 9
@@ -132,7 +191,7 @@ def _encode_video_keyframes(*images: Any, frames: int) -> list[dict[str, Any]]:
         frame_indices = [0, last_frame // 2, last_frame]
 
     encoded = []
-    for image, frame_index in zip(provided[:3], frame_indices):
+    for image, frame_index in zip(provided[:3], frame_indices, strict=True):
         pil_img = coerce_rgb_image(image)
         buf = io.BytesIO()
         pil_img.save(buf, format="PNG")
@@ -275,10 +334,11 @@ def run_video_generation(
     frames: int, fps: float, skip_memory_cleanup: bool,
     progress=NO_PROGRESS
 ):
-    prompt = require_prompt(prompt, "Please enter a prompt for the video.")
+    workflow = _configured_workflow()
+    prompt = _require_prompt(prompt, "Please enter a prompt for the video.")
 
     progress(0.1, desc="Starting video backend...")
-    _start_ltx_video_backend()
+    workflow.backend.start()
 
     progress(0.2, desc="Preparing request...")
     ic_lora_key = LTX_IC_LORA_OPTIONS.get(ic_lora_name or LTX_IC_LORA_OFF)
@@ -336,15 +396,15 @@ def run_video_generation(
 
     progress(0.4, desc="Generating video... this may take a while")
     try:
-        client = LtxClient(LTX_WEB_API)
+        client = LtxClient(workflow.api_base)
         job_id = client.generate(payload, progress=progress)
         progress(0.9, desc="Downloading video result...")
-        out_filename = client.download(job_id, OUTPUT_DIR)
+        out_filename = client.download(job_id, workflow.output_dir)
         progress(1.0, desc="Done")
         mode_label = "Lipsync" if audio_base64 and keyframes else ("Audio-guided video" if audio_base64 else "Video")
-        return out_filename, ok_status(0.0, f"{mode_label} generation complete.")
-    except Exception as e:
-        raise BackendUnavailableError(f"Video generation failed: {e}")
+        return out_filename, _ok_status(0.0, f"{mode_label} generation complete.")
+    except Exception as exc:
+        raise BackendUnavailableError(f"Video generation failed: {exc}") from exc
 
 __all__ = (
     'build_payload',
@@ -357,5 +417,6 @@ __all__ = (
     '_encode_video_conditioning',
     '_encode_ic_lora_reference_image',
     'run_video_generation',
+    'configure_ltx_workflow',
+    'LtxWorkflow',
 )
-_seal_runtime_module(globals())

@@ -1,13 +1,16 @@
 """Pure PiD latent helpers shared by pipeline adapters."""
 
 from __future__ import annotations
+
+import threading
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+from image_studio.core.specs import PIDCheckpointSpec
 from image_studio.errors import UserInputError
 from image_studio.infra.lazy_modules import LazyModuleGroup
-
-from typing import Any
-import threading
-
-from ..errors import UserInputError
+from image_studio.runtime_access import runtime_namespace as _runtime
 
 
 def validate_dims(width: int, height: int, *, scale: int = 4, max_low_side: int = 1024) -> tuple[int, int]:
@@ -37,30 +40,21 @@ def patchify_flux2_raw_latents(raw_latents: Any) -> Any:
     )
 
 
-# --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
-
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
-
 _pid_load_lock = threading.Lock()
 
 def _ensure_pid():
     """Clone the PiD reference repo if its inference code is missing."""
-    return _git_bootstrap.ensure(PID_REPO_SPEC)
+    return _runtime()._git_bootstrap.ensure(_runtime().PID_REPO_SPEC)
 
 def _import_pid_modules():
     """Lazy-import PiD helpers from the reference repo."""
     if not _ensure_pid():
         raise UserInputError(
             "PiD is unavailable. Clone the PiD repo into "
-            f"{PID_DIR} or set PID_DIR to an existing checkout."
+            f"{_runtime().PID_DIR} or set PID_DIR to an existing checkout."
         )
-    if PID_DIR not in sys.path:
-        sys.path.insert(0, PID_DIR)
+    if _runtime().PID_DIR not in _runtime().sys.path:
+        _runtime().sys.path.insert(0, _runtime().PID_DIR)
 
     try:
         from huggingface_hub import hf_hub_download
@@ -86,7 +80,7 @@ def _get_pid_modules():
 
 def _pid_checkpoint_specs(backbone: str) -> dict[str, PIDCheckpointSpec]:
     try:
-        return PID_CHECKPOINTS[backbone]
+        return _runtime().PID_CHECKPOINTS[backbone]
     except KeyError:
         raise UserInputError(f"Unknown PiD backbone: {backbone}") from None
 
@@ -95,21 +89,21 @@ def _pid_checkpoint_label(backbone: str, ckpt_type: str) -> str:
 
 def _resolve_pid_ckpt_type(backbone: str, requested: str, width: int, height: int) -> str:
     specs = _pid_checkpoint_specs(backbone)
-    requested = (requested or PID_CKPT_AUTO).strip()
-    if requested == PID_CKPT_AUTO:
-        if PID_CKPT_2K in specs and max(width, height) <= 512:
-            return PID_CKPT_2K
-        if PID_CKPT_2KTO4K in specs:
-            return PID_CKPT_2KTO4K
+    requested = (requested or _runtime().PID_CKPT_AUTO).strip()
+    if requested == _runtime().PID_CKPT_AUTO:
+        if _runtime().PID_CKPT_2K in specs and max(width, height) <= 512:
+            return _runtime().PID_CKPT_2K
+        if _runtime().PID_CKPT_2KTO4K in specs:
+            return _runtime().PID_CKPT_2KTO4K
         return next(iter(specs))
     if requested not in specs:
-        valid = ", ".join([PID_CKPT_AUTO, *specs.keys()])
+        valid = ", ".join([_runtime().PID_CKPT_AUTO, *specs.keys()])
         raise UserInputError(f"Unknown PiD checkpoint for {backbone}: {requested}. Valid: {valid}")
     return requested
 
 def _validate_pid_dims(width: int, height: int) -> tuple[int, int]:
-    out_w, out_h = width * PID_SCALE, height * PID_SCALE
-    if max(width, height) > PID_MAX_LOW_SIDE:
+    out_w, out_h = width * _runtime().PID_SCALE, height * _runtime().PID_SCALE
+    if max(width, height) > _runtime().PID_MAX_LOW_SIDE:
         raise UserInputError(
             "PiD 4x decode supports low-res sides up to 1024 px "
             "(outputs up to 4096 px per side). Reduce width/height or disable PiD."
@@ -119,29 +113,29 @@ def _validate_pid_dims(width: int, height: int) -> tuple[int, int]:
 def _ensure_pid_checkpoint(backbone: str, ckpt_type: str, force_download: bool = False) -> str:
     modules = _get_pid_modules()
     spec = _pid_checkpoint_specs(backbone)[ckpt_type]
-    checkpoint_path = os.path.join(PID_DIR, *spec.relative_checkpoint_path.split("/"))
-    if os.path.isfile(checkpoint_path) and not force_download:
+    checkpoint_path = _runtime().os.path.join(_runtime().PID_DIR, *spec.relative_checkpoint_path.split("/"))
+    if _runtime().os.path.isfile(checkpoint_path) and not force_download:
         return checkpoint_path
-    if force_download and os.path.isfile(checkpoint_path):
+    if force_download and _runtime().os.path.isfile(checkpoint_path):
         try:
-            os.remove(checkpoint_path)
+            _runtime().os.remove(checkpoint_path)
         except OSError:
             pass
 
-    log.info("Downloading %s checkpoint from %s...", spec.label, PID_HF_REPO)
+    _runtime().log.info("Downloading %s checkpoint from %s...", spec.label, _runtime().PID_HF_REPO)
     try:
         modules["hf_hub_download"](
-            repo_id=PID_HF_REPO,
+            repo_id=_runtime().PID_HF_REPO,
             filename=spec.relative_checkpoint_path,
-            local_dir=PID_DIR,
+            local_dir=_runtime().PID_DIR,
             force_download=force_download,
         )
     except Exception as exc:
         raise UserInputError(
-            f"Failed to download {spec.label} checkpoint from {PID_HF_REPO}. "
+            f"Failed to download {spec.label} checkpoint from {_runtime().PID_HF_REPO}. "
             "Check network access and Hugging Face permissions."
         ) from exc
-    if not os.path.isfile(checkpoint_path):
+    if not _runtime().os.path.isfile(checkpoint_path):
         raise UserInputError(f"PiD checkpoint download did not create {checkpoint_path}")
     return checkpoint_path
 
@@ -149,42 +143,42 @@ def _ensure_pid_vae_asset(backbone: str) -> str:
     """Download the VAE asset used by a PiD latent-space checkpoint."""
     modules = _get_pid_modules()
     try:
-        relative_path = PID_VAE_ASSETS[backbone]
+        relative_path = _runtime().PID_VAE_ASSETS[backbone]
     except KeyError:
         raise UserInputError(f"No PiD VAE asset is registered for {backbone}") from None
 
-    vae_path = os.path.join(PID_DIR, *relative_path.split("/"))
-    if os.path.isfile(vae_path):
+    vae_path = _runtime().os.path.join(_runtime().PID_DIR, *relative_path.split("/"))
+    if _runtime().os.path.isfile(vae_path):
         return vae_path
 
-    log.info("Downloading PiD VAE asset %s from %s...", relative_path, PID_HF_REPO)
+    _runtime().log.info("Downloading PiD VAE asset %s from %s...", relative_path, _runtime().PID_HF_REPO)
     try:
         modules["hf_hub_download"](
-            repo_id=PID_HF_REPO,
+            repo_id=_runtime().PID_HF_REPO,
             filename=relative_path,
-            local_dir=PID_DIR,
+            local_dir=_runtime().PID_DIR,
         )
     except Exception as exc:
         raise UserInputError(
-            f"Failed to download {relative_path} from {PID_HF_REPO}. "
+            f"Failed to download {relative_path} from {_runtime().PID_HF_REPO}. "
             "PiD needs this latent-space VAE file."
         ) from exc
-    if not os.path.isfile(vae_path):
+    if not _runtime().os.path.isfile(vae_path):
         raise UserInputError(f"PiD VAE download did not create {vae_path}")
     return vae_path
 
 def _ensure_pid_experiment_available(backbone: str, spec: PIDCheckpointSpec):
-    if backbone != PID_BACKBONE_QWEN:
+    if backbone != _runtime().PID_BACKBONE_QWEN:
         return
 
-    config_root = os.path.join(PID_DIR, "pid", "_src", "configs", "pid")
-    for root, _dirs, files in os.walk(config_root):
+    config_root = _runtime().os.path.join(_runtime().PID_DIR, "pid", "_src", "configs", "pid")
+    for root, _dirs, files in _runtime().os.walk(config_root):
         for name in files:
             if not name.endswith(".py"):
                 continue
-            path = os.path.join(root, name)
+            path = _runtime().os.path.join(root, name)
             try:
-                with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                with open(path, encoding="utf-8", errors="ignore") as fh:
                     if spec.experiment in fh.read():
                         return
             except OSError:
@@ -192,32 +186,32 @@ def _ensure_pid_experiment_available(backbone: str, spec: PIDCheckpointSpec):
 
     raise UserInputError(
         "Your PiD checkout does not include the Qwen Image PiD experiment "
-        f"({spec.experiment}). Update or reclone {PID_DIR} from {PID_REPO}."
+        f"({spec.experiment}). Update or reclone {_runtime().PID_DIR} from {_runtime().PID_REPO}."
     )
 
-def _pipeline_execution_device(pipe) -> torch.device:
+def _pipeline_execution_device(pipe) -> _runtime().torch.device:
     target_device = getattr(pipe, "_execution_device", None)
     if target_device is None or getattr(target_device, "type", None) == "meta":
-        target_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        target_device = _runtime().torch.device("cuda" if _runtime().torch.cuda.is_available() else "cpu")
     return target_device
 
-def _zimage_decode_latent_01(pipe, latent: torch.Tensor) -> torch.Tensor:
+def _zimage_decode_latent_01(pipe, latent: _runtime().torch.Tensor) -> _runtime().torch.Tensor:
     """VAE-decode normalized Z-Image latents to an RGB tensor in [0, 1]."""
     scale = float(pipe.vae.config.scaling_factor)
     shift = float(getattr(pipe.vae.config, "shift_factor", None) or 0.0)
     target_device = _pipeline_execution_device(pipe)
     raw_latent = (latent.to(target_device) / scale + shift).to(pipe.vae.dtype)
-    with torch.no_grad():
+    with _runtime().torch.no_grad():
         decoded = pipe.vae.decode(raw_latent, return_dict=False)[0]
     return (decoded * 0.5 + 0.5).clamp(0, 1)
 
-def _qwen_extract_latent(pipe, raw_output, width: int, height: int) -> torch.Tensor:
+def _qwen_extract_latent(pipe, raw_output, width: int, height: int) -> _runtime().torch.Tensor:
     """Normalize Qwen Image output_type='latent' into (B, C, H, W)."""
     latent = raw_output.images
-    if not isinstance(latent, torch.Tensor):
+    if not isinstance(latent, _runtime().torch.Tensor):
         raise UserInputError(f"Qwen Image returned an unexpected latent value: {type(latent)!r}")
     if latent.ndim == 3:
-        latent = QwenImagePipeline._unpack_latents(
+        latent = _runtime().QwenImagePipeline._unpack_latents(
             latent,
             height=height,
             width=width,
@@ -231,7 +225,7 @@ def _qwen_extract_latent(pipe, raw_output, width: int, height: int) -> torch.Ten
         raise UserInputError(f"Qwen Image returned an unexpected latent shape: {tuple(latent.shape)}")
     return latent
 
-def _qwen_decode_latent_01(pipe, latent: torch.Tensor) -> torch.Tensor:
+def _qwen_decode_latent_01(pipe, latent: _runtime().torch.Tensor) -> _runtime().torch.Tensor:
     """VAE-decode normalized Qwen Image latents to an RGB tensor in [0, 1]."""
     config = pipe.vae.config
     if not hasattr(config, "latents_mean") or not hasattr(config, "latents_std"):
@@ -239,16 +233,16 @@ def _qwen_decode_latent_01(pipe, latent: torch.Tensor) -> torch.Tensor:
 
     target_device = _pipeline_execution_device(pipe)
     latent = latent.to(target_device)
-    latents_mean = torch.tensor(config.latents_mean).view(1, -1, 1, 1).to(latent.device, latent.dtype)
-    latents_std = torch.tensor(config.latents_std).view(1, -1, 1, 1).to(latent.device, latent.dtype)
+    latents_mean = _runtime().torch.tensor(config.latents_mean).view(1, -1, 1, 1).to(latent.device, latent.dtype)
+    latents_std = _runtime().torch.tensor(config.latents_std).view(1, -1, 1, 1).to(latent.device, latent.dtype)
     raw_latent = (latent * latents_std + latents_mean).unsqueeze(2).to(pipe.vae.dtype)
-    with torch.no_grad():
+    with _runtime().torch.no_grad():
         decoded = pipe.vae.decode(raw_latent, return_dict=False)[0]
     if decoded.ndim == 5:
         decoded = decoded[:, :, 0]
     return (decoded * 0.5 + 0.5).clamp(0, 1)
 
-def _neg1_tensor_to_pil(tensor: torch.Tensor) -> Image.Image:
+def _neg1_tensor_to_pil(tensor: _runtime().torch.Tensor) -> _runtime().Image.Image:
     """Convert a PiD output tensor in [-1, 1] to PIL."""
     while tensor.dim() > 3:
         if tensor.shape[0] == 1:
@@ -266,14 +260,14 @@ def _neg1_tensor_to_pil(tensor: torch.Tensor) -> Image.Image:
     if tensor.shape[0] == 4:
         tensor = tensor[:3]
     array = ((tensor.float().clamp(-1, 1) + 1.0) * 127.5)
-    array = array.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
-    return Image.fromarray(array)
+    array = array.permute(1, 2, 0).cpu().numpy().astype(_runtime().np.uint8)
+    return _runtime().Image.fromarray(array)
 
 def resolve_seed(seed: int | float | str) -> int:
     seed = int(seed)
     if seed >= 0:
         return seed
-    return int(torch.randint(0, 2**31 - 1, (1,), device="cpu").item())
+    return int(_runtime().torch.randint(0, 2**31 - 1, (1,), device="cpu").item())
 
 def _scheduler_sigma(pipe) -> float:
     try:
@@ -284,17 +278,17 @@ def _scheduler_sigma(pipe) -> float:
 def _pid_data_batch(
     pid_model,
     prompt: str,
-    latent: torch.Tensor,
+    latent: _runtime().torch.Tensor,
     sigma: float,
-    baseline_neg1_1: torch.Tensor | None = None,
+    baseline_neg1_1: _runtime().torch.Tensor | None = None,
 ) -> dict[str, Any]:
     data_batch = {
         pid_model.config.input_caption_key: [prompt],
-        "LQ_latent": latent.to(dtype=torch.bfloat16, device="cuda"),
-        "degrade_sigma": torch.tensor([sigma], device="cuda", dtype=torch.float32),
+        "LQ_latent": latent.to(dtype=_runtime().torch.bfloat16, device="cuda"),
+        "degrade_sigma": _runtime().torch.tensor([sigma], device="cuda", dtype=_runtime().torch.float32),
     }
     if baseline_neg1_1 is not None:
-        data_batch["LQ_video_or_image"] = baseline_neg1_1.to(dtype=torch.bfloat16, device="cuda")
+        data_batch["LQ_video_or_image"] = baseline_neg1_1.to(dtype=_runtime().torch.bfloat16, device="cuda")
     return data_batch
 
 def _pid_generate_image(
@@ -305,8 +299,8 @@ def _pid_generate_image(
     pid_steps: int,
     seed: int,
     image_size: tuple[int, int],
-) -> Image.Image:
-    with torch.no_grad():
+) -> _runtime().Image.Image:
+    with _runtime().torch.no_grad():
         samples = pid_model.generate_samples_from_batch(
             data_batch,
             cfg_scale=float(pid_cfg),
@@ -317,9 +311,9 @@ def _pid_generate_image(
         )
     return _neg1_tensor_to_pil(samples[0])
 
-def _zimage_extract_latent(pipe, raw_output, width: int, height: int) -> torch.Tensor:
+def _zimage_extract_latent(pipe, raw_output, width: int, height: int) -> _runtime().torch.Tensor:
     latent = raw_output.images
-    if not isinstance(latent, torch.Tensor) or latent.ndim != 4:
+    if not isinstance(latent, _runtime().torch.Tensor) or latent.ndim != 4:
         raise UserInputError(f"Z-Image returned an unexpected latent shape: {getattr(latent, 'shape', None)}")
     return latent
 
@@ -327,8 +321,8 @@ def _zimage_extract_latent(pipe, raw_output, width: int, height: int) -> torch.T
 class PiDBackboneAdapter:
     backbone: str
     load_decoder: Callable[[str], Any]
-    extract_latent: Callable[[Any, Any, int, int], torch.Tensor]
-    decode_baseline_01: Callable[[Any, torch.Tensor], torch.Tensor]
+    extract_latent: Callable[[Any, Any, int, int], _runtime().torch.Tensor]
+    decode_baseline_01: Callable[[Any, _runtime().torch.Tensor], _runtime().torch.Tensor]
     lowres_desc: str
     vae_desc: str
     decoder_desc: str
@@ -337,8 +331,8 @@ class PiDBackboneAdapter:
 
 def _pid_backbone_adapter(backbone: str) -> PiDBackboneAdapter:
     adapters = {
-        PID_BACKBONE_ZIMAGE: PiDBackboneAdapter(
-            backbone=PID_BACKBONE_ZIMAGE,
+        _runtime().PID_BACKBONE_ZIMAGE: PiDBackboneAdapter(
+            backbone=_runtime().PID_BACKBONE_ZIMAGE,
             load_decoder=get_zimage_pid_decoder,
             extract_latent=_zimage_extract_latent,
             decode_baseline_01=_zimage_decode_latent_01,
@@ -347,8 +341,8 @@ def _pid_backbone_adapter(backbone: str) -> PiDBackboneAdapter:
             decoder_desc="Loading PiD decoder...",
             decode_desc="PiD 4x decoding...",
         ),
-        PID_BACKBONE_QWEN: PiDBackboneAdapter(
-            backbone=PID_BACKBONE_QWEN,
+        _runtime().PID_BACKBONE_QWEN: PiDBackboneAdapter(
+            backbone=_runtime().PID_BACKBONE_QWEN,
             load_decoder=get_qwen_pid_decoder,
             extract_latent=_qwen_extract_latent,
             decode_baseline_01=_qwen_decode_latent_01,
@@ -375,21 +369,21 @@ def _decode_pipeline_with_pid(
     pid_cfg: float,
     seed: int,
     progress,
-) -> tuple[Image.Image, float, str, int, int]:
-    if not torch.cuda.is_available():
+) -> tuple[_runtime().Image.Image, float, str, int, int]:
+    if not _runtime().torch.cuda.is_available():
         raise UserInputError("PiD decoding requires CUDA.")
     pid_out_w, pid_out_h = _validate_pid_dims(width, height)
     pid_ckpt_type = _resolve_pid_ckpt_type(adapter.backbone, pid_ckpt, width, height)
     pid_kwargs = dict(kwargs)
     pid_kwargs["output_type"] = "latent"
 
-    def generate_with_pid() -> Image.Image:
+    def generate_with_pid() -> _runtime().Image.Image:
         progress(0.3, desc=adapter.lowres_desc)
         raw_output = pipe(**pid_kwargs)
         latent = adapter.extract_latent(pipe, raw_output, width, height)
 
         progress(0.55, desc=adapter.vae_desc)
-        with torch.no_grad():
+        with _runtime().torch.no_grad():
             baseline_01 = adapter.decode_baseline_01(pipe, latent)
         baseline_neg1_1 = baseline_01 * 2.0 - 1.0
 
@@ -411,10 +405,10 @@ def _decode_pipeline_with_pid(
             pid_cfg=pid_cfg,
             pid_steps=pid_steps,
             seed=seed,
-            image_size=(lq_h * PID_SCALE, lq_w * PID_SCALE),
+            image_size=(lq_h * _runtime().PID_SCALE, lq_w * _runtime().PID_SCALE),
         )
 
-    result, elapsed = timed_result(generate_with_pid)
+    result, elapsed = _runtime().timed_result(generate_with_pid)
     return result, elapsed, pid_ckpt_type, pid_out_w, pid_out_h
 
 def _decode_zimage_family_with_pid(
@@ -428,9 +422,9 @@ def _decode_zimage_family_with_pid(
     pid_cfg: float,
     seed: int,
     progress,
-) -> tuple[Image.Image, float, str, int, int]:
+) -> tuple[_runtime().Image.Image, float, str, int, int]:
     """Run a Z-Image-family pipeline to latent, then PiD-decode it at 4x."""
-    adapter = _pid_backbone_adapter(PID_BACKBONE_ZIMAGE)
+    adapter = _pid_backbone_adapter(_runtime().PID_BACKBONE_ZIMAGE)
     return _decode_pipeline_with_pid(
         adapter, pipe, prompt, kwargs, width, height,
         pid_ckpt, pid_steps, pid_cfg, seed, progress,
@@ -447,9 +441,9 @@ def _decode_qwen_with_pid(
     pid_cfg: float,
     seed: int,
     progress,
-) -> tuple[Image.Image, float, str, int, int]:
+) -> tuple[_runtime().Image.Image, float, str, int, int]:
     """Run Qwen Image to latent, then PiD-decode it at 4x."""
-    adapter = _pid_backbone_adapter(PID_BACKBONE_QWEN)
+    adapter = _pid_backbone_adapter(_runtime().PID_BACKBONE_QWEN)
     return _decode_pipeline_with_pid(
         adapter, pipe, prompt, kwargs, width, height,
         pid_ckpt, pid_steps, pid_cfg, seed, progress,
@@ -458,7 +452,7 @@ def _decode_qwen_with_pid(
 def _ideogram4_caption_text_for_pid(final_prompt: str, source_prompt: str) -> str:
     """Convert Ideogram's JSON caption into a compact PiD text condition."""
     try:
-        caption = json.loads(final_prompt)
+        caption = _runtime().json.loads(final_prompt)
     except Exception:
         text = final_prompt or source_prompt or ""
         return text[:4000]
@@ -488,11 +482,11 @@ def _ideogram4_caption_text_for_pid(final_prompt: str, source_prompt: str) -> st
     text = " ".join(piece.strip() for piece in pieces if piece and piece.strip())
     return (text or source_prompt or final_prompt or "")[:4000]
 
-def _ideogram4_patchify_flux2_raw_latents(raw_latents: torch.Tensor) -> torch.Tensor:
+def _ideogram4_patchify_flux2_raw_latents(raw_latents: _runtime().torch.Tensor) -> _runtime().torch.Tensor:
     """Flux2/PiD patchify: (B, 32, H/8, W/8) -> (B, 128, H/16, W/16)."""
     return patchify_flux2_raw_latents(raw_latents)
 
-def _ideogram4_normalize_flux2_packed_latents(pid_model, packed_latents: torch.Tensor) -> torch.Tensor:
+def _ideogram4_normalize_flux2_packed_latents(pid_model, packed_latents: _runtime().torch.Tensor) -> _runtime().torch.Tensor:
     """Apply PiD's Flux2 VAE BatchNorm normalization to packed raw latents."""
     vae_interface = getattr(pid_model, "vae_encoder", None)
     vae_wrapper = getattr(vae_interface, "model", None)
@@ -504,7 +498,7 @@ def _ideogram4_normalize_flux2_packed_latents(pid_model, packed_latents: torch.T
     bn.eval()
     eps = float(getattr(autoencoder, "bn_eps", getattr(bn, "eps", 1e-4)))
     mean = bn.running_mean.view(1, -1, 1, 1).to(packed_latents.device, packed_latents.dtype)
-    std = torch.sqrt(bn.running_var.view(1, -1, 1, 1).to(packed_latents.device, packed_latents.dtype) + eps)
+    std = _runtime().torch.sqrt(bn.running_var.view(1, -1, 1, 1).to(packed_latents.device, packed_latents.dtype) + eps)
     if mean.shape[1] != packed_latents.shape[1]:
         raise UserInputError(
             f"PiD Flux2 VAE BN has {mean.shape[1]} channels, but Ideogram latents have "
@@ -523,32 +517,32 @@ def _decode_ideogram4_with_pid(
     pid_cfg: float,
     seed: int,
     progress,
-) -> tuple[Image.Image, float, str, int, int]:
+) -> tuple[_runtime().Image.Image, float, str, int, int]:
     """Run Ideogram 4 to raw Flux2 latents, then PiD-decode at 4x."""
-    if not torch.cuda.is_available():
+    if not _runtime().torch.cuda.is_available():
         raise UserInputError("PiD decoding requires CUDA.")
     pid_out_w, pid_out_h = _validate_pid_dims(width, height)
-    pid_ckpt_type = _resolve_pid_ckpt_type(PID_BACKBONE_IDEOGRAM4, pid_ckpt, width, height)
+    pid_ckpt_type = _resolve_pid_ckpt_type(_runtime().PID_BACKBONE_IDEOGRAM4, pid_ckpt, width, height)
 
     if not isinstance(latent_output, dict):
         raise UserInputError(f"Ideogram returned an unexpected latent output type: {type(latent_output)!r}")
     raw_latents = latent_output.get("latents")
     baseline = latent_output.get("decoded")
-    if not isinstance(raw_latents, torch.Tensor) or raw_latents.ndim != 4:
+    if not isinstance(raw_latents, _runtime().torch.Tensor) or raw_latents.ndim != 4:
         raise UserInputError(f"Ideogram returned an unexpected latent shape: {getattr(raw_latents, 'shape', None)}")
     if raw_latents.shape[1] != 32:
         raise UserInputError(f"Flux2 PiD expects 32-channel Ideogram latents, got {tuple(raw_latents.shape)}.")
-    if not isinstance(baseline, torch.Tensor) or baseline.ndim != 4:
+    if not isinstance(baseline, _runtime().torch.Tensor) or baseline.ndim != 4:
         raise UserInputError(f"Ideogram returned an unexpected decoded tensor shape: {getattr(baseline, 'shape', None)}")
 
-    def decode_with_pid() -> Image.Image:
+    def decode_with_pid() -> _runtime().Image.Image:
         progress(0.86, desc="Loading Ideogram PiD decoder...")
-        pid_model = get_pid_decoder(PID_BACKBONE_IDEOGRAM4, pid_ckpt_type)
+        pid_model = get_pid_decoder(_runtime().PID_BACKBONE_IDEOGRAM4, pid_ckpt_type)
         packed = _ideogram4_patchify_flux2_raw_latents(
-            raw_latents.detach().to(dtype=torch.bfloat16, device="cuda").contiguous()
+            raw_latents.detach().to(dtype=_runtime().torch.bfloat16, device="cuda").contiguous()
         )
         latents = _ideogram4_normalize_flux2_packed_latents(pid_model, packed).to(
-            dtype=torch.bfloat16,
+            dtype=_runtime().torch.bfloat16,
             device="cuda",
         )
         pid_prompt = _ideogram4_caption_text_for_pid(final_prompt, source_prompt)
@@ -561,10 +555,10 @@ def _decode_ideogram4_with_pid(
             pid_cfg=pid_cfg,
             pid_steps=pid_steps,
             seed=seed,
-            image_size=(lq_h * PID_SCALE, lq_w * PID_SCALE),
+            image_size=(lq_h * _runtime().PID_SCALE, lq_w * _runtime().PID_SCALE),
         )
 
-    result, elapsed = timed_result(decode_with_pid)
+    result, elapsed = _runtime().timed_result(decode_with_pid)
     return result, elapsed, pid_ckpt_type, pid_out_w, pid_out_h
 
 def get_pid_decoder(backbone: str, ckpt_type: str):
@@ -578,11 +572,11 @@ def get_pid_decoder(backbone: str, ckpt_type: str):
         _ensure_pid_experiment_available(backbone, spec)
 
         def load_from_path(path: str):
-            log.info("Loading %s decoder from %s...", spec.label, path)
+            _runtime().log.info("Loading %s decoder from %s...", spec.label, path)
             with _pid_load_lock:
-                cwd = os.getcwd()
+                cwd = _runtime().os.getcwd()
                 try:
-                    os.chdir(PID_DIR)
+                    _runtime().os.chdir(_runtime().PID_DIR)
                     return modules["load_model_from_checkpoint"](
                         experiment_name=spec.experiment,
                         checkpoint_path=path,
@@ -593,7 +587,7 @@ def get_pid_decoder(backbone: str, ckpt_type: str):
                         load_ema_to_reg=False,
                     )
                 finally:
-                    os.chdir(cwd)
+                    _runtime().os.chdir(cwd)
 
         try:
             model, _config = load_from_path(checkpoint_path)
@@ -601,26 +595,26 @@ def get_pid_decoder(backbone: str, ckpt_type: str):
             message = str(exc)
             if "PytorchStreamReader failed reading zip archive" not in message:
                 raise
-            log.warning(
+            _runtime().log.warning(
                 "%s checkpoint appears corrupt or incomplete; re-downloading from %s.",
                 spec.label,
-                PID_HF_REPO,
+                _runtime().PID_HF_REPO,
             )
             checkpoint_path = _ensure_pid_checkpoint(backbone, ckpt_type, force_download=True)
             model, _config = load_from_path(checkpoint_path)
         model.eval()
-        log.info("%s decoder ready.", spec.label)
+        _runtime().log.info("%s decoder ready.", spec.label)
         return model
 
-    return _load_managed_model(spec.registry_key, factory)
+    return _runtime()._load_managed_model(spec.registry_key, factory)
 
 def get_zimage_pid_decoder(ckpt_type: str):
     """Load a PiD decoder checkpoint for Z-Image's Flux-compatible VAE latent."""
-    return get_pid_decoder(PID_BACKBONE_ZIMAGE, ckpt_type)
+    return get_pid_decoder(_runtime().PID_BACKBONE_ZIMAGE, ckpt_type)
 
 def get_qwen_pid_decoder(ckpt_type: str):
     """Load a PiD decoder checkpoint for Qwen-Image's VAE latent."""
-    return get_pid_decoder(PID_BACKBONE_QWEN, ckpt_type)
+    return get_pid_decoder(_runtime().PID_BACKBONE_QWEN, ckpt_type)
 
 __all__ = (
     '_ensure_pid',
@@ -654,4 +648,3 @@ __all__ = (
     'get_zimage_pid_decoder',
     'get_qwen_pid_decoder',
 )
-_seal_runtime_module(globals())

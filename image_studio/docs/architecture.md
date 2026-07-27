@@ -48,8 +48,13 @@ service without duplicating lifecycle code.
 `GET /api/models` returns schema version 1 of the model catalog. Secret defaults are never included.
 Clients should use stable model IDs; display names and compatibility aliases are presentation details.
 
-## Migration rule
+## Composition and compatibility
 
-New integrations use the typed core. `runtime_binding.py` and `RequestHandlerRegistry` exist only for
-compatibility while older chat, video, upscale, and UI modules are migrated. New modules must receive
-their dependencies explicitly and must not bind the runtime global namespace.
+`image_studio.app` is a lightweight entry point. It defers heavyweight GPU imports and process
+construction to `composition.create_application()`. The resulting `AppContext` owns the model
+manager, output store, managed services, locks, typed image executor, storage catalog, and UI
+actions.
+
+The historical flat Gradio handlers remain at the outer compatibility boundary, but they no longer
+copy the runtime namespace into feature modules. New integrations must use constructor or
+`AppContext` injection and must not import `runtime_access`.

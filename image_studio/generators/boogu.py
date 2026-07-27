@@ -1,17 +1,14 @@
 """Extracted runtime implementation."""
 
 from __future__ import annotations
-from image_studio.errors import UserInputError
-from image_studio.progress import NO_PROGRESS
+
+from typing import Any
 
 # --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+from image_studio.errors import UserInputError
+from image_studio.progress import NO_PROGRESS
+from image_studio.runtime_access import runtime_namespace as _runtime
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
 
 def run_boogu_generate(
     prompt: str,
@@ -24,18 +21,18 @@ def run_boogu_generate(
     seed: int,
     progress=NO_PROGRESS,
 ) -> tuple[str, str, str]:
-    prompt = require_prompt(prompt)
-    width, height = validate_boogu_dims(width, height)
-    seed = resolve_seed(seed)
-    version = _normalize_boogu_generation_version(version)
-    model_key = BOOGU_IMAGE_VERSION_KEYS[version]
-    max_pixels, max_side = _boogu_image_limits(width, height)
+    prompt = _runtime().require_prompt(prompt)
+    width, height = _runtime().validate_boogu_dims(width, height)
+    seed = _runtime().resolve_seed(seed)
+    version = _runtime()._normalize_boogu_generation_version(version)
+    model_key = _runtime().BOOGU_IMAGE_VERSION_KEYS[version]
+    max_pixels, max_side = _runtime()._boogu_image_limits(width, height)
 
     progress(0.1, desc=f"Loading Boogu-Image {version}...")
-    pipe = get_boogu_image_pipe(model_key)
-    generator = _boogu_generator(seed)
+    pipe = _runtime().get_boogu_image_pipe(model_key)
+    generator = _runtime()._boogu_generator(seed)
 
-    if version == BOOGU_IMAGE_VERSION_TURBO:
+    if version == _runtime().BOOGU_IMAGE_VERSION_TURBO:
         steps = max(1, int(steps))
         kwargs = dict(
             instruction=[prompt],
@@ -46,7 +43,7 @@ def run_boogu_generate(
             max_input_image_pixels=max_pixels,
             max_input_image_side_length=max_side,
             num_inference_steps=steps,
-            **_boogu_text_encoder_kwargs(),
+            **_runtime()._boogu_text_encoder_kwargs(),
             text_guidance_scale=1.0,
             image_guidance_scale=1.0,
             empty_instruction_guidance_scale=0.0,
@@ -66,7 +63,7 @@ def run_boogu_generate(
             max_input_image_pixels=max_pixels,
             max_input_image_side_length=max_side,
             num_inference_steps=steps,
-            **_boogu_text_encoder_kwargs(),
+            **_runtime()._boogu_text_encoder_kwargs(),
             text_guidance_scale=guidance,
             image_guidance_scale=1.0,
             generator=generator,
@@ -74,8 +71,8 @@ def run_boogu_generate(
         status_parts = [f"{width}x{height}", "Boogu-Image Base", f"steps {steps}", f"guidance {guidance}"]
 
     progress(0.3, desc=f"Generating with Boogu-Image {version}...")
-    result, elapsed = _run_boogu_pipeline(pipe, kwargs)
-    return finalize_image_result("boogu_gen", result, ok_status(elapsed, *status_parts), seed, always_seed=True)
+    result, elapsed = _runtime()._run_boogu_pipeline(pipe, kwargs)
+    return _runtime().finalize_image_result("boogu_gen", result, _runtime().ok_status(elapsed, *status_parts), seed, always_seed=True)
 
 def run_boogu_edit(
     img1: Any,
@@ -93,26 +90,26 @@ def run_boogu_edit(
     seed: int,
     progress=NO_PROGRESS,
 ) -> tuple[str, str, str]:
-    prompt = require_prompt(prompt)
-    images = collect_rgb_images(img1, img2, img3)
+    prompt = _runtime().require_prompt(prompt)
+    images = _runtime().collect_rgb_images(img1, img2, img3)
     if not images:
         raise UserInputError("Upload one source image for Boogu-Image Edit.")
     if len(images) > 1:
         raise UserInputError("Boogu-Image Edit currently supports one reference image per edit.")
 
-    seed = resolve_seed(seed)
-    version = _normalize_boogu_edit_version(version)
-    model_key = BOOGU_IMAGE_EDIT_VERSION_KEYS[version]
+    seed = _runtime().resolve_seed(seed)
+    version = _runtime()._normalize_boogu_edit_version(version)
+    model_key = _runtime().BOOGU_IMAGE_EDIT_VERSION_KEYS[version]
     output_width = None
     output_height = None
     if not keep_original_aspect:
-        output_width, output_height = validate_boogu_dims(width, height)
+        output_width, output_height = _runtime().validate_boogu_dims(width, height)
 
     progress(0.1, desc=f"Loading Boogu-Image Edit {version}...")
-    pipe = get_boogu_image_pipe(model_key)
-    generator = _boogu_generator(seed)
-    max_pixels = BOOGU_IMAGE_MAX_PIXELS if keep_original_aspect else output_width * output_height
-    max_side = BOOGU_IMAGE_MAX_SIDE * 2 if keep_original_aspect else 2 * max(output_width, output_height)
+    pipe = _runtime().get_boogu_image_pipe(model_key)
+    generator = _runtime()._boogu_generator(seed)
+    max_pixels = _runtime().BOOGU_IMAGE_MAX_PIXELS if keep_original_aspect else output_width * output_height
+    max_side = _runtime().BOOGU_IMAGE_MAX_SIDE * 2 if keep_original_aspect else 2 * max(output_width, output_height)
     steps = max(1, int(steps))
 
     kwargs = dict(
@@ -124,11 +121,11 @@ def run_boogu_edit(
         max_input_image_side_length=max_side,
         align_res=bool(keep_original_aspect),
         num_inference_steps=steps,
-        **_boogu_text_encoder_kwargs(),
+        **_runtime()._boogu_text_encoder_kwargs(),
         generator=generator,
     )
 
-    if version == BOOGU_IMAGE_VERSION_TURBO:
+    if version == _runtime().BOOGU_IMAGE_VERSION_TURBO:
         kwargs.update(
             negative_instruction="",
             empty_instruction="",
@@ -154,18 +151,17 @@ def run_boogu_edit(
         ]
 
     progress(0.3, desc=f"Editing with Boogu-Image {version}...")
-    result, elapsed = _run_boogu_pipeline(pipe, kwargs)
+    result, elapsed = _runtime()._run_boogu_pipeline(pipe, kwargs)
     size_part = f"{result.width}x{result.height}" if keep_original_aspect else f"{output_width}x{output_height}"
-    status = ok_status(
+    status = _runtime().ok_status(
         elapsed,
         size_part,
         f"Boogu-Image Edit {version}",
         *status_parts,
     )
-    return finalize_image_result("boogu_edit", result, status, seed, always_seed=True)
+    return _runtime().finalize_image_result("boogu_edit", result, status, seed, always_seed=True)
 
 __all__ = (
     'run_boogu_generate',
     'run_boogu_edit',
 )
-_seal_runtime_module(globals())

@@ -1,12 +1,12 @@
 """Extracted runtime implementation."""
 
 from __future__ import annotations
-from image_studio.errors import UserInputError
 
 # --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+from dataclasses import dataclass
+
+from image_studio.errors import UserInputError
+from image_studio.runtime_access import runtime_namespace as _runtime
 
 
 class ChatModelSelector:
@@ -16,9 +16,6 @@ class ChatModelSelector:
         self.choice = choice
         self.service = None
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
 
 @dataclass(frozen=True)
 class GemmaModelSpec:
@@ -48,13 +45,13 @@ class GemmaService:
         self.processor = None
 
     def load(self):
-        with _model_load_lock:
+        with _runtime()._model_load_lock:
             if self.model is not None:
                 return self.model, self.processor
 
-            model_mgr.ensure_vram(self.vram_mb, exclude=self.mgr_key)
-            log.info("Loading %s (%s) ...", self.label, self.model_id)
-            from transformers import AutoModelForCausalLM, AutoProcessor, AutoModelForMultimodalLM
+            _runtime().model_mgr.ensure_vram(self.vram_mb, exclude=self.mgr_key)
+            _runtime().log.info("Loading %s (%s) ...", self.label, self.model_id)
+            from transformers import AutoModelForCausalLM, AutoModelForMultimodalLM, AutoProcessor
 
             processor_kwargs = {"padding_side": "left"}
             model_kwargs = {"torch_dtype": "auto", "device_map": "auto"}
@@ -67,22 +64,22 @@ class GemmaService:
 
             if self.assistant_model_id:
                 try:
-                    log.info("Loading Gemma MTP assistant %s ...", self.assistant_model_id)
+                    _runtime().log.info("Loading Gemma MTP assistant %s ...", self.assistant_model_id)
                     self.assistant_model = AutoModelForCausalLM.from_pretrained(
                         self.assistant_model_id,
                         torch_dtype="auto",
                         device_map="auto",
                         trust_remote_code=True,
                     )
-                    log.info("Gemma MTP assistant ready.")
+                    _runtime().log.info("Gemma MTP assistant ready.")
                 except Exception as exc:
                     self.assistant_model = None
-                    log.warning("Gemma MTP assistant unavailable; continuing without it: %s", exc)
-            model_mgr.register(
+                    _runtime().log.warning("Gemma MTP assistant unavailable; continuing without it: %s", exc)
+            _runtime().model_mgr.register(
                 self.mgr_key, self.model, self.vram_mb,
                 unload_fn=self.unload,
             )
-            log.info("%s ready.", self.label)
+            _runtime().log.info("%s ready.", self.label)
             return self.model, self.processor
 
     def unload(self):
@@ -99,10 +96,10 @@ class GemmaService:
         self.assistant_model = None
         self.model = None
         self.processor = None
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        log.info("%s unloaded.", self.label)
+        _runtime().gc.collect()
+        if _runtime().torch.cuda.is_available():
+            _runtime().torch.cuda.empty_cache()
+        _runtime().log.info("%s unloaded.", self.label)
 
     @staticmethod
     def _normalise_messages(messages) -> list[dict]:
@@ -140,9 +137,9 @@ class GemmaService:
                     raise UserInputError(f"{self.label} does not support {part_type} input.")
 
     @staticmethod
-    def _input_device(model) -> torch.device:
+    def _input_device(model) -> _runtime().torch.device:
         device = getattr(model, "device", None)
-        if isinstance(device, torch.device) and device.type != "meta":
+        if isinstance(device, _runtime().torch.device) and device.type != "meta":
             return device
         try:
             for param in model.parameters():
@@ -150,7 +147,7 @@ class GemmaService:
                     return param.device
         except Exception:
             pass
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        return _runtime().torch.device("cuda" if _runtime().torch.cuda.is_available() else "cpu")
 
     def generate(
         self,
@@ -159,7 +156,7 @@ class GemmaService:
         enable_thinking=False,
         do_sample=True,
     ):
-        with _inprocess_gpu_lock:
+        with _runtime()._inprocess_gpu_lock:
             return self._generate_locked(
                 messages,
                 max_new_tokens=max_new_tokens,
@@ -175,7 +172,7 @@ class GemmaService:
         do_sample=True,
     ):
         model, processor = self.load()
-        model_mgr.touch(self.mgr_key)
+        _runtime().model_mgr.touch(self.mgr_key)
 
         normalised = self._normalise_messages(messages)
         self._validate_messages(normalised)
@@ -186,14 +183,14 @@ class GemmaService:
             return_tensors="pt", add_generation_prompt=True,
             enable_thinking=enable_thinking,
         )
-        if isinstance(inputs, torch.Tensor):
+        if isinstance(inputs, _runtime().torch.Tensor):
             inputs = {"input_ids": inputs}
         target_device = self._input_device(model)
         if hasattr(inputs, "to"):
             inputs = inputs.to(target_device)
         else:
             inputs = {
-                key: value.to(target_device) if isinstance(value, torch.Tensor) else value
+                key: value.to(target_device) if isinstance(value, _runtime().torch.Tensor) else value
                 for key, value in inputs.items()
             }
         input_len = inputs["input_ids"].shape[-1]
@@ -213,29 +210,29 @@ class GemmaService:
         )
         if assistant_allowed:
             generate_kwargs["assistant_model"] = self.assistant_model
-            generate_kwargs["num_assistant_tokens"] = GEMMA_NUM_ASSISTANT_TOKENS
-        t_generate = time.perf_counter()
-        with torch.inference_mode():
+            generate_kwargs["num_assistant_tokens"] = _runtime().GEMMA_NUM_ASSISTANT_TOKENS
+        t_generate = _runtime().time.perf_counter()
+        with _runtime().torch.inference_mode():
             try:
                 outputs = model.generate(**inputs, **generate_kwargs)
             except Exception as exc:
                 assistant = generate_kwargs.pop("assistant_model", None)
                 if assistant is None:
                     raise
-                log.warning("Gemma MTP assistant failed during generate; retrying without it: %s", exc)
+                _runtime().log.warning("Gemma MTP assistant failed during generate; retrying without it: %s", exc)
                 try:
                     assistant.to("cpu")
                 except Exception:
                     pass
                 self.assistant_model = None
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                if _runtime().torch.cuda.is_available():
+                    _runtime().torch.cuda.empty_cache()
                 outputs = model.generate(**inputs, **generate_kwargs)
 
         generated = outputs[0][input_len:]
-        elapsed = max(1e-6, time.perf_counter() - t_generate)
+        elapsed = max(1e-6, _runtime().time.perf_counter() - t_generate)
         out_tokens = int(generated.numel())
-        log.info(
+        _runtime().log.info(
             "Gemma generate | model=%s | assistant=%s | input_tokens=%d | output_tokens=%d | elapsed=%.2fs | tok/s=%.2f",
             self.label,
             bool(assistant_allowed),
@@ -251,7 +248,7 @@ class GemmaService:
                 return parsed["content"]
             return str(parsed)
         except Exception:
-            return re.sub(r"<[^>]+>", "", raw).strip()
+            return _runtime().re.sub(r"<[^>]+>", "", raw).strip()
 
 def _get_active_gemma_service() -> GemmaService:
     """Return whichever GemmaService the Chat tab currently has selected.
@@ -260,17 +257,17 @@ def _get_active_gemma_service() -> GemmaService:
     default if no explicit choice has been made yet).  This lazily creates
     the Huihui service on first access when it is the default.
     """
-    if _normalize_chat_gemma_choice(_chat_selector.choice) == CHAT_DIFFUSIONGEMMA_VLLM:
+    if _normalize_chat_gemma_choice(_runtime()._chat_selector.choice) == _runtime().CHAT_DIFFUSIONGEMMA_VLLM:
         raise UserInputError("DiffusionGemma vLLM is managed through the backend script, not as a local Gemma model.")
-    return _resolve_chat_gemma_service(_chat_selector.choice)
+    return _resolve_chat_gemma_service(_runtime()._chat_selector.choice)
 
 def _load_gemma():
     return _get_active_gemma_service().load()
 
 def _unload_gemma():
     service = _get_active_gemma_service()
-    if model_mgr.is_loaded(service.mgr_key):
-        model_mgr.unload(service.mgr_key)
+    if _runtime().model_mgr.is_loaded(service.mgr_key):
+        _runtime().model_mgr.unload(service.mgr_key)
     else:
         service.unload()
 
@@ -282,9 +279,9 @@ def _gemma_generate(
     chat_model: str | None = None,
 ):
     """Low-level generate helper that reuses the Chat tab's selected Gemma model."""
-    choice = _normalize_chat_gemma_choice(chat_model or _chat_selector.choice)
-    if choice == CHAT_DIFFUSIONGEMMA_VLLM:
-        return _diffusiongemma_vllm_service.generate(
+    choice = _normalize_chat_gemma_choice(chat_model or _runtime()._chat_selector.choice)
+    if choice == _runtime().CHAT_DIFFUSIONGEMMA_VLLM:
+        return _runtime()._diffusiongemma_vllm_service.generate(
             messages, max_new_tokens, enable_thinking, do_sample
         )
     return _resolve_chat_gemma_service(choice).generate(
@@ -292,46 +289,46 @@ def _gemma_generate(
     )
 
 def _normalize_chat_gemma_choice(choice: str | None) -> str:
-    choice = (choice or CHAT_GEMMA_DEFAULT).strip()
-    if choice in CHAT_GEMMA_CHOICES:
+    choice = (choice or _runtime().CHAT_GEMMA_DEFAULT).strip()
+    if choice in _runtime().CHAT_GEMMA_CHOICES:
         return choice
-    return CHAT_GEMMA_LABEL_TO_KEY.get(choice, CHAT_GEMMA_DEFAULT)
+    return _runtime().CHAT_GEMMA_LABEL_TO_KEY.get(choice, _runtime().CHAT_GEMMA_DEFAULT)
 
 def _resolve_chat_gemma_service(choice: str | None) -> GemmaService:
     """Return the Gemma service backing the Chat tab for *choice*."""
     choice = _normalize_chat_gemma_choice(choice)
-    if choice == CHAT_DIFFUSIONGEMMA_VLLM:
+    if choice == _runtime().CHAT_DIFFUSIONGEMMA_VLLM:
         raise UserInputError("DiffusionGemma vLLM does not have a local Gemma service.")
-    if _chat_selector.service is not None and _chat_selector.choice == choice:
-        return _chat_selector.service
+    if _runtime()._chat_selector.service is not None and _runtime()._chat_selector.choice == choice:
+        return _runtime()._chat_selector.service
 
-    if _chat_selector.service is not None:
-        log.info(
+    if _runtime()._chat_selector.service is not None:
+        _runtime().log.info(
             "Gemma selection changed: %s -> %s; unloading previous model.",
-            _chat_selector.choice,
+            _runtime()._chat_selector.choice,
             choice,
         )
-        if model_mgr.is_loaded(_chat_selector.service.mgr_key):
-            model_mgr.unload(_chat_selector.service.mgr_key)
+        if _runtime().model_mgr.is_loaded(_runtime()._chat_selector.service.mgr_key):
+            _runtime().model_mgr.unload(_runtime()._chat_selector.service.mgr_key)
         else:
-            _chat_selector.service.unload()
+            _runtime()._chat_selector.service.unload()
 
-    _chat_selector.choice = choice
-    _chat_selector.service = GemmaService(GEMMA_MODEL_SPECS[choice])
-    return _chat_selector.service
+    _runtime()._chat_selector.choice = choice
+    _runtime()._chat_selector.service = GemmaService(_runtime().GEMMA_MODEL_SPECS[choice])
+    return _runtime()._chat_selector.service
 
 def _set_chat_gemma_choice(choice: str | None):
     """Update the selected chat backend, unloading a previous local Gemma if needed."""
     choice = _normalize_chat_gemma_choice(choice)
-    if choice == CHAT_DIFFUSIONGEMMA_VLLM:
-        if _chat_selector.service is not None:
-            log.info("Gemma selection changed: %s -> %s; unloading previous model.", _chat_selector.choice, choice)
-            if model_mgr.is_loaded(_chat_selector.service.mgr_key):
-                model_mgr.unload(_chat_selector.service.mgr_key)
+    if choice == _runtime().CHAT_DIFFUSIONGEMMA_VLLM:
+        if _runtime()._chat_selector.service is not None:
+            _runtime().log.info("Gemma selection changed: %s -> %s; unloading previous model.", _runtime()._chat_selector.choice, choice)
+            if _runtime().model_mgr.is_loaded(_runtime()._chat_selector.service.mgr_key):
+                _runtime().model_mgr.unload(_runtime()._chat_selector.service.mgr_key)
             else:
-                _chat_selector.service.unload()
-        _chat_selector.service = None
-        _chat_selector.choice = choice
+                _runtime()._chat_selector.service.unload()
+        _runtime()._chat_selector.service = None
+        _runtime()._chat_selector.choice = choice
         return
 
     _resolve_chat_gemma_service(choice)
@@ -354,11 +351,11 @@ def _chat_gemma_generate(
 
 def chat_model_changed(new_model: str, history: list):
     """Clear chat history when the user switches Gemma chat models."""
-    with _inprocess_gpu_lock:
+    with _runtime()._inprocess_gpu_lock:
         _set_chat_gemma_choice(new_model)
     if history:
-        log.info("Chat model changed; conversation cleared.")
-    return [], "", None, None, _build_vram_widget_md()
+        _runtime().log.info("Chat model changed; conversation cleared.")
+    return [], "", None, None, _runtime()._build_vram_widget_md()
 
 __all__ = (
     'ChatModelSelector',
@@ -374,4 +371,3 @@ __all__ = (
     '_chat_gemma_generate',
     'chat_model_changed',
 )
-_seal_runtime_module(globals())

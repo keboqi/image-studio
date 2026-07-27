@@ -1,53 +1,81 @@
-"""Extracted runtime implementation."""
+"""OpenAI-compatible DiffusionGemma managed backend."""
 
 from __future__ import annotations
-from image_studio.errors import AppError, BackendUnavailableError
-from image_studio.services.managed_runtime import ManagedScriptConfig, ManagedScriptService
 
-# --- extracted runtime implementation ---
-import sys as _runtime_sys
+import base64
+import json
+import logging
+import os
 import time
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+import urllib.error
+import urllib.request
+from typing import Any
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
+from image_studio.config import VllmConfig
+from image_studio.errors import AppError, BackendUnavailableError
+from image_studio.infra.managed_service import ManagedScriptConfig, ManagedScriptService
+from image_studio.infra.model_manager import ModelManager
+
+log = logging.getLogger(__name__)
+
 
 class DiffusionGemmaVllmService(ManagedScriptService):
     """OpenAI-compatible DiffusionGemma backend managed by deploy_diffusiongemma_vllm.sh."""
 
-    def __init__(self):
-        super().__init__(ManagedScriptConfig(
-            label="DiffusionGemma vLLM",
-            manager_key=MODEL_DIFFUSIONGEMMA_VLLM,
-            vram_mb=MODEL_SPECS[MODEL_DIFFUSIONGEMMA_VLLM].vram_mb,
-            script=DIFFUSIONGEMMA_VLLM_SCRIPT,
-            shell=DIFFUSIONGEMMA_VLLM_BASH,
-            shell_env_name="DIFFUSIONGEMMA_VLLM_BASH",
-            ready_timeout=DIFFUSIONGEMMA_VLLM_READY_TIMEOUT,
-            start_timeout=DIFFUSIONGEMMA_VLLM_START_TIMEOUT,
-            request_timeout=DIFFUSIONGEMMA_VLLM_REQUEST_TIMEOUT,
-        ))
-        self.api_base = DIFFUSIONGEMMA_VLLM_API_BASE
-        self.model = DIFFUSIONGEMMA_VLLM_MODEL
+    def __init__(
+        self,
+        config: VllmConfig,
+        *,
+        model_manager: ModelManager | None = None,
+        model_key: str = "diffusiongemma_vllm",
+        vram_mb: int = 22_000,
+        execution_lock: Any = None,
+        bootstrap_allowed: bool = True,
+    ) -> None:
+        super().__init__(
+            ManagedScriptConfig(
+                label="DiffusionGemma vLLM",
+                manager_key=model_key,
+                vram_mb=vram_mb,
+                script=str(config.script),
+                shell=config.shell,
+                shell_env_name="DIFFUSIONGEMMA_VLLM_BASH",
+                ready_timeout=config.ready_timeout,
+                start_timeout=config.start_timeout,
+                request_timeout=config.request_timeout,
+                working_dir=str(config.script.parent),
+            ),
+            model_manager=model_manager,
+            execution_lock=execution_lock,
+            bootstrap_allowed=bootstrap_allowed,
+            logger=log,
+        )
+        self.api_base = config.api_base
+        self.model = config.model
+        self.port = str(config.port)
+        self.hf_model = config.hf_model
+        self.restart_policy = config.restart_policy
+        self.warmup_on_start = config.warmup_on_start
+        self.unload_mode = config.unload_mode
+        self.sleep_level = config.sleep_level
+        self.request_timeout = config.request_timeout
 
     def _script_env(self) -> dict[str, str]:
         env = super()._script_env()
-        env["PORT"] = DIFFUSIONGEMMA_VLLM_PORT
+        env["PORT"] = self.port
         env["SERVED_MODEL_NAME"] = self.model
         env["READY_TIMEOUT"] = str(self.config.ready_timeout)
         env["REQUEST_TIMEOUT"] = str(self.config.request_timeout)
-        env["RESTART_POLICY"] = DIFFUSIONGEMMA_VLLM_RESTART_POLICY
-        env["WARMUP_ON_START"] = DIFFUSIONGEMMA_VLLM_WARMUP_ON_START
-        env["DIFFUSIONGEMMA_VLLM_SLEEP_LEVEL"] = DIFFUSIONGEMMA_VLLM_SLEEP_LEVEL
-        env["SLEEP_LEVEL"] = DIFFUSIONGEMMA_VLLM_SLEEP_LEVEL
-        if DIFFUSIONGEMMA_VLLM_HF_MODEL:
-            env["MODEL"] = DIFFUSIONGEMMA_VLLM_HF_MODEL
+        env["RESTART_POLICY"] = self.restart_policy
+        env["WARMUP_ON_START"] = self.warmup_on_start
+        env["DIFFUSIONGEMMA_VLLM_SLEEP_LEVEL"] = self.sleep_level
+        env["SLEEP_LEVEL"] = self.sleep_level
+        if self.hf_model:
+            env["MODEL"] = self.hf_model
         return env
 
     def is_healthy(self) -> bool:
-        if _NO_BOOTSTRAP:
+        if not self.bootstrap_allowed:
             return False
         try:
             req = urllib.request.Request(f"{self.api_base}/models", method="GET")
@@ -61,7 +89,7 @@ class DiffusionGemmaVllmService(ManagedScriptService):
         return f"{base}{path}"
 
     def is_sleeping(self) -> bool:
-        if _NO_BOOTSTRAP:
+        if not self.bootstrap_allowed:
             return False
         try:
             req = urllib.request.Request(self._control_url("/is_sleeping"), method="GET")
@@ -84,7 +112,7 @@ class DiffusionGemmaVllmService(ManagedScriptService):
         return self.is_healthy() and not self.is_sleeping()
 
     def is_control_reachable(self) -> bool:
-        if _NO_BOOTSTRAP:
+        if not self.bootstrap_allowed:
             return False
         try:
             req = urllib.request.Request(self._control_url("/is_sleeping"), method="GET")
@@ -123,7 +151,7 @@ class DiffusionGemmaVllmService(ManagedScriptService):
 
     def stop(self):
         with self.lock:
-            action = "sleep" if DIFFUSIONGEMMA_VLLM_UNLOAD_MODE == "sleep" else "stop"
+            action = "sleep" if self.unload_mode == "sleep" else "stop"
             fallback = "stop" if action == "sleep" else None
             self._stop_script(action, fallback_action=fallback)
 
@@ -156,13 +184,31 @@ class DiffusionGemmaVllmService(ManagedScriptService):
             encoded = base64.b64encode(fh.read()).decode("ascii")
         return f"data:{mime};base64,{encoded}"
 
+    @staticmethod
+    def _normalise_messages(messages: Any) -> list[dict[str, Any]]:
+        normalised = []
+        for message in messages:
+            content = message["content"]
+            if isinstance(content, str):
+                content = [{"type": "text", "text": content}]
+            normalised.append({"role": message["role"], "content": content})
+        return normalised
+
+    @staticmethod
+    def _content_parts(content: Any) -> list[dict[str, Any]]:
+        if isinstance(content, list):
+            return [part for part in content if isinstance(part, dict)]
+        if isinstance(content, dict):
+            return [content]
+        return [{"type": "text", "text": str(content)}]
+
     @classmethod
-    def _messages_to_openai_messages(cls, messages) -> list[dict[str, Any]]:
+    def _messages_to_openai_messages(cls, messages: Any) -> list[dict[str, Any]]:
         openai_messages = []
-        for msg in GemmaService._normalise_messages(messages):
-            content_parts = []
+        for msg in cls._normalise_messages(messages):
+            content_parts: list[dict[str, Any]] = []
             has_image = False
-            for part in GemmaService._content_parts(msg.get("content")):
+            for part in cls._content_parts(msg.get("content")):
                 part_type = part.get("type", "text")
                 if part_type == "text":
                     text = str(part.get("text", ""))
@@ -206,7 +252,7 @@ class DiffusionGemmaVllmService(ManagedScriptService):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=DIFFUSIONGEMMA_VLLM_REQUEST_TIMEOUT) as res:
+            with urllib.request.urlopen(req, timeout=self.request_timeout) as res:
                 return json.loads(res.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = ""
@@ -244,7 +290,8 @@ class DiffusionGemmaVllmService(ManagedScriptService):
     ) -> str:
         openai_messages = self._messages_to_openai_messages(messages)
         self.ensure_running()
-        model_mgr.touch(self.mgr_key)
+        if self.model_manager is not None:
+            self.model_manager.touch(self.mgr_key)
 
         payload: dict[str, Any] = {
             "model": self.model,
@@ -288,4 +335,3 @@ class DiffusionGemmaVllmService(ManagedScriptService):
 __all__ = (
     'DiffusionGemmaVllmService',
 )
-_seal_runtime_module(globals())

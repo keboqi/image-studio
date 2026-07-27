@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import sys as _runtime_sys
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+from typing import Any
+
+from image_studio.runtime_access import runtime_namespace as _runtime
 from image_studio.ui.errors import ui_endpoint
 
-_runtime_source = _runtime_sys.modules.get("image_studio.runtime") or _runtime_sys.modules.get("image_studio.app") or _runtime_sys.modules.get("__main__")
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
 
-def extract_video_path(evt: gr.SelectData):
+def extract_video_path(evt: _runtime().gr.SelectData):
     """Resolve the real video path from a gallery thumbnail click.
 
     The gallery items are (thumb_path, video_filename).  Gradio copies
@@ -21,20 +19,20 @@ def extract_video_path(evt: gr.SelectData):
     """
     caption = evt.value.get("caption", "") if isinstance(evt.value, dict) else ""
     if caption:
-        candidate = output_store.contained_path(os.path.join(OUTPUT_DIR, caption))
-        if candidate and os.path.isfile(candidate):
+        candidate = _runtime().output_store.contained_path(_runtime().os.path.join(_runtime().OUTPUT_DIR, caption))
+        if candidate and _runtime().os.path.isfile(candidate):
             return candidate
 
     # Fallback: try the image path and strip .thumb.jpg
     path = evt.value["image"]["path"] if isinstance(evt.value, dict) else evt.value
     if path and path.endswith(".thumb.jpg"):
         path = path[:-10]
-    safe_path = output_store.contained_path(path) if path else None
-    if safe_path and os.path.isfile(safe_path):
+    safe_path = _runtime().output_store.contained_path(path) if path else None
+    if safe_path and _runtime().os.path.isfile(safe_path):
         return safe_path
     return None
 
-def extract_gallery_path(evt: gr.SelectData, cur_gal):
+def extract_gallery_path(evt: _runtime().gr.SelectData, cur_gal):
     if not cur_gal or evt.index is None or evt.index >= len(cur_gal):
         return None
     item = cur_gal[evt.index]
@@ -43,23 +41,23 @@ def extract_gallery_path(evt: gr.SelectData, cur_gal):
         path = path["image"]["path"] if isinstance(path["image"], dict) else path["image"]
     elif isinstance(path, dict) and "name" in path:
         path = path["name"]
-    return raw_image_path_for_preview(path) if isinstance(path, str) else path
+    return _runtime().raw_image_path_for_preview(path) if isinstance(path, str) else path
 
 def _gallery_download_update(path: Any):
     if not path:
-        return gr.update(value=None, interactive=False)
-    raw_path = resolve_raw_image_payload(path)
-    safe_path = _resolve_output_file_path(raw_path) if isinstance(raw_path, str) else None
-    if not safe_path or not os.path.isfile(safe_path):
-        return gr.update(value=None, interactive=False)
-    return gr.update(value=safe_path, interactive=True)
+        return _runtime().gr.update(value=None, interactive=False)
+    raw_path = _runtime().resolve_raw_image_payload(path)
+    safe_path = _runtime()._resolve_output_file_path(raw_path) if isinstance(raw_path, str) else None
+    if not safe_path or not _runtime().os.path.isfile(safe_path):
+        return _runtime().gr.update(value=None, interactive=False)
+    return _runtime().gr.update(value=safe_path, interactive=True)
 
-def select_gallery_path(evt: gr.SelectData, cur_gal):
+def select_gallery_path(evt: _runtime().gr.SelectData, cur_gal):
     path = extract_gallery_path(evt, cur_gal)
     return path, _gallery_download_update(path)
 
 def refresh_gallery_selection():
-    return get_gallery_images(), None, _gallery_download_update(None)
+    return _runtime().get_gallery_images(), None, _gallery_download_update(None)
 
 def clear_gallery_selection():
     return None
@@ -69,57 +67,57 @@ def clear_gallery_download():
 
 def send_to_edit_slots(new_img, e1, e2, e3):
     if new_img is None:
-        raise UserInputError("No image available to send.")
-    new_img = resolve_raw_image_payload(new_img)
+        raise _runtime().UserInputError("No image available to send.")
+    new_img = _runtime().resolve_raw_image_payload(new_img)
     if e1 is None:
-        return new_img, e2, e3, gr.update(selected=TAB_EDIT)
+        return new_img, e2, e3, _runtime().gr.update(selected=_runtime().TAB_EDIT)
     if e2 is None:
-        return e1, new_img, e3, gr.update(selected=TAB_EDIT)
+        return e1, new_img, e3, _runtime().gr.update(selected=_runtime().TAB_EDIT)
     if e3 is None:
-        return e1, e2, new_img, gr.update(selected=TAB_EDIT)
-    return new_img, e2, e3, gr.update(selected=TAB_EDIT)
+        return e1, e2, new_img, _runtime().gr.update(selected=_runtime().TAB_EDIT)
+    return new_img, e2, e3, _runtime().gr.update(selected=_runtime().TAB_EDIT)
 
 def _send_image_to_tab(img: Any, tab_id: int):
     if img is None:
-        raise UserInputError("No image available to send.")
-    return resolve_raw_image_payload(img), gr.update(selected=tab_id)
+        raise _runtime().UserInputError("No image available to send.")
+    return _runtime().resolve_raw_image_payload(img), _runtime().gr.update(selected=tab_id)
 
 @ui_endpoint
 def _require_selected_image_to_tab(path: Any, tab_id: int):
     if not path:
-        raise UserInputError("Please select an image in the gallery first.")
-    return require_gallery_image_path(path), gr.update(selected=tab_id)
+        raise _runtime().UserInputError("Please select an image in the gallery first.")
+    return _runtime().require_gallery_image_path(path), _runtime().gr.update(selected=tab_id)
 
 def send_image_to_upscale(img):
-    return _send_image_to_tab(img, TAB_UPSCALE)
+    return _send_image_to_tab(img, _runtime().TAB_UPSCALE)
 
 def send_image_to_video(img):
-    return _send_image_to_tab(img, TAB_VIDEO)
+    return _send_image_to_tab(img, _runtime().TAB_VIDEO)
 
 @ui_endpoint
 def require_selected_to_video(path):
-    return _require_selected_image_to_tab(path, TAB_VIDEO)
+    return _require_selected_image_to_tab(path, _runtime().TAB_VIDEO)
 
 def send_video_to_upscale(video):
-    path = _require_seedvr2_video_path(video)
-    return path, gr.update(selected=TAB_UPSCALE)
+    path = _runtime()._require_seedvr2_video_path(video)
+    return path, _runtime().gr.update(selected=_runtime().TAB_UPSCALE)
 
 @ui_endpoint
 def send_gallery_to_edit_slots(path, e1, e2, e3):
     if not path:
-        raise UserInputError("Please select an image in the gallery first.")
-    return send_to_edit_slots(require_gallery_image_path(path), e1, e2, e3)
+        raise _runtime().UserInputError("Please select an image in the gallery first.")
+    return send_to_edit_slots(_runtime().require_gallery_image_path(path), e1, e2, e3)
 
 @ui_endpoint
 def require_selected_to_upscale(path):
-    return _require_selected_image_to_tab(path, TAB_UPSCALE)
+    return _require_selected_image_to_tab(path, _runtime().TAB_UPSCALE)
 
 def send_image_to_ai_remover(img):
-    return _send_image_to_tab(img, TAB_AI_REMOVER)
+    return _send_image_to_tab(img, _runtime().TAB_AI_REMOVER)
 
 @ui_endpoint
 def require_selected_to_ai_remover(path):
-    return _require_selected_image_to_tab(path, TAB_AI_REMOVER)
+    return _require_selected_image_to_tab(path, _runtime().TAB_AI_REMOVER)
 
 __all__ = (
     'extract_video_path',
@@ -141,4 +139,3 @@ __all__ = (
     'send_image_to_ai_remover',
     'require_selected_to_ai_remover',
 )
-_seal_runtime_module(globals())

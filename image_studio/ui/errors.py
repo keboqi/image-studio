@@ -4,16 +4,13 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable
-from typing import Any, TypeVar
 
 from ..errors import AppError
 
-F = TypeVar("F", bound=Callable[..., Any])
 
-
-def ui_endpoint(fn: F) -> F:
+def ui_endpoint[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
     @functools.wraps(fn)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return fn(*args, **kwargs)
         except AppError as exc:
@@ -21,4 +18,4 @@ def ui_endpoint(fn: F) -> F:
 
             raise gr.Error(str(exc)) from exc
 
-    return wrapper  # type: ignore[return-value]
+    return wrapper

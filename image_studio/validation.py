@@ -10,15 +10,18 @@ MAX_PIXELS = 4096 * 4096
 
 
 def validate_dims(width: int | None, height: int | None) -> tuple[int, int]:
+    if width is None or height is None:
+        raise UserInputError("Width and height must be integers.")
     try:
-        width, height = int(width), int(height)
+        parsed_width = int(width)
+        parsed_height = int(height)
     except (TypeError, ValueError) as exc:
         raise UserInputError("Width and height must be integers.") from exc
-    if width % 16 or height % 16:
+    if parsed_width % 16 or parsed_height % 16:
         raise UserInputError("Width/height must be multiples of 16")
-    if width * height > MAX_PIXELS:
+    if parsed_width * parsed_height > MAX_PIXELS:
         raise UserInputError("Max total pixels: 16M")
-    return width, height
+    return parsed_width, parsed_height
 
 
 def validate_ideogram_dims(width: int | None, height: int | None) -> tuple[int, int]:

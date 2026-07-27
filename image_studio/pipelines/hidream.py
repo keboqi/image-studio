@@ -1,22 +1,19 @@
 """Extracted runtime implementation."""
 
 from __future__ import annotations
-from image_studio.errors import UserInputError
-from image_studio.infra.lazy_modules import LazyModuleGroup
-from importlib.metadata import PackageNotFoundError, version
 
 # --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+from importlib.metadata import PackageNotFoundError, version
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
+from image_studio.core.specs import HiDreamSpec
+from image_studio.errors import UserInputError
+from image_studio.infra.lazy_modules import LazyModuleGroup
+from image_studio.runtime_access import runtime_namespace as _runtime
+
 
 def _ensure_hidream_o1():
     """Clone the HiDream-O1 reference repo if its pipeline code is missing."""
-    return _git_bootstrap.ensure(HIDREAM_O1_REPO_SPEC)
+    return _runtime()._git_bootstrap.ensure(_runtime().HIDREAM_O1_REPO_SPEC)
 
 def _hidream_default_rope_parameters(config=None, device=None, seq_len=None, **rope_kwargs):
     """Default RoPE init for Transformers versions that no longer export it."""
@@ -43,7 +40,7 @@ def _hidream_default_rope_parameters(config=None, device=None, seq_len=None, **r
 
     dim = int(head_dim * partial_rotary_factor)
     inv_freq = 1.0 / (
-        base ** (torch.arange(0, dim, 2, dtype=torch.int64).float().to(device) / dim)
+        base ** (_runtime().torch.arange(0, dim, 2, dtype=_runtime().torch.int64).float().to(device) / dim)
     )
     return inv_freq, 1.0
 
@@ -58,7 +55,7 @@ def _patch_hidream_rope_registry():
     except (PackageNotFoundError, ValueError):
         transformers_major = 4
     if transformers_major >= 5:
-        log.warning("Review the HiDream RoPE compatibility patch for Transformers %s.", version("transformers"))
+        _runtime().log.warning("Review the HiDream RoPE compatibility patch for Transformers %s.", version("transformers"))
     try:
         import transformers.modeling_rope_utils as rope_utils
     except ImportError as exc:
@@ -75,27 +72,27 @@ def _patch_hidream_rope_registry():
         default_fn = _hidream_default_rope_parameters
 
     registry["default"] = default_fn
-    log.info("Patched Transformers ROPE_INIT_FUNCTIONS with default RoPE for HiDream-O1.")
+    _runtime().log.info("Patched Transformers ROPE_INIT_FUNCTIONS with default RoPE for HiDream-O1.")
 
 def _patch_hidream_qwen3_vl_classes():
     """Patch methods expected by newer Transformers onto HiDream's vendored Qwen3-VL."""
-    module = sys.modules.get("models.qwen3_vl_transformers")
+    module = _runtime().sys.modules.get("models.qwen3_vl_transformers")
     if module is None:
         return
 
     rotary_cls = getattr(module, "Qwen3VLTextRotaryEmbedding", None)
     if rotary_cls is not None and not hasattr(rotary_cls, "compute_default_rope_parameters"):
         rotary_cls.compute_default_rope_parameters = staticmethod(_hidream_default_rope_parameters)
-        log.info("Patched HiDream Qwen3VLTextRotaryEmbedding default RoPE method.")
+        _runtime().log.info("Patched HiDream Qwen3VLTextRotaryEmbedding default RoPE method.")
 
 def _hidream_model_device(model):
     for tensor in list(model.parameters()) + list(model.buffers()):
-        if torch.is_tensor(tensor) and tensor.device.type != "meta":
+        if _runtime().torch.is_tensor(tensor) and tensor.device.type != "meta":
             return tensor.device
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return _runtime().torch.device("cuda" if _runtime().torch.cuda.is_available() else "cpu")
 
 def _is_meta_tensor(value):
-    return torch.is_tensor(value) and value.device.type == "meta"
+    return _runtime().torch.is_tensor(value) and value.device.type == "meta"
 
 def _repair_hidream_rope_buffers(model):
     """Recreate non-checkpoint RoPE buffers left on meta by newer Transformers."""
@@ -133,24 +130,24 @@ def _repair_hidream_rope_buffers(model):
         repaired += 1
 
     if repaired:
-        log.info("Repaired %d HiDream Qwen3-VL RoPE buffer(s) on %s.", repaired, device)
+        _runtime().log.info("Repaired %d HiDream Qwen3-VL RoPE buffer(s) on %s.", repaired, device)
 
 def _import_hidream_o1():
     """Lazy-import HiDream-O1 helpers from the official reference repo."""
     if not _ensure_hidream_o1():
         raise UserInputError(
             "HiDream-O1 reference code is unavailable. Check git/network access "
-            f"or clone {HIDREAM_O1_REPO} into {HIDREAM_O1_DIR}."
+            f"or clone {_runtime().HIDREAM_O1_REPO} into {_runtime().HIDREAM_O1_DIR}."
         )
 
-    if HIDREAM_O1_DIR not in sys.path:
-        sys.path.insert(0, HIDREAM_O1_DIR)
+    if _runtime().HIDREAM_O1_DIR not in _runtime().sys.path:
+        _runtime().sys.path.insert(0, _runtime().HIDREAM_O1_DIR)
 
     try:
         _patch_hidream_rope_registry()
-        from transformers import AutoProcessor, PreTrainedTokenizerBase
         from models.pipeline import DEFAULT_TIMESTEPS, generate_image
         from models.qwen3_vl_transformers import Qwen3VLForConditionalGeneration
+        from transformers import AutoProcessor, PreTrainedTokenizerBase
         _patch_hidream_qwen3_vl_classes()
     except ImportError as exc:
         raise UserInputError(
@@ -202,25 +199,25 @@ def _unload_hidream_o1_bundle(bundle: dict):
 
 def _get_hidream_o1_spec(model_key: str) -> HiDreamSpec:
     try:
-        return HIDREAM_O1_SPECS[model_key]
+        return _runtime().HIDREAM_O1_SPECS[model_key]
     except KeyError:
         raise ValueError(f"Unknown HiDream-O1 model key: {model_key!r}") from None
 
 def get_hidream_o1_pipe(model_key: str):
     spec = _get_hidream_o1_spec(model_key)
     
-    other_key = MODEL_HIDREAM_O1_FULL if model_key == MODEL_HIDREAM_O1_DEV else MODEL_HIDREAM_O1_DEV
-    if model_mgr.is_loaded(other_key):
-        model_mgr.unload(other_key)
+    other_key = _runtime().MODEL_HIDREAM_O1_FULL if model_key == _runtime().MODEL_HIDREAM_O1_DEV else _runtime().MODEL_HIDREAM_O1_DEV
+    if _runtime().model_mgr.is_loaded(other_key):
+        _runtime().model_mgr.unload(other_key)
 
     def factory():
         mods = _get_hidream_o1()
-        log.info("Loading %s pipeline from %s...", spec.label, spec.model_id)
+        _runtime().log.info("Loading %s pipeline from %s...", spec.label, spec.model_id)
         processor = mods["AutoProcessor"].from_pretrained(spec.model_id)
         _patch_hidream_rope_registry()
         model = mods["Qwen3VLForConditionalGeneration"].from_pretrained(
             spec.model_id,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=_runtime().torch.bfloat16,
             device_map="cuda",
         ).eval()
         _repair_hidream_rope_buffers(model)
@@ -242,17 +239,17 @@ def get_hidream_o1_pipe(model_key: str):
             "noise_scale_end": spec.noise_scale_end,
             "noise_clip_std": spec.noise_clip_std,
         }
-        log.info("%s pipeline ready.", spec.label)
+        _runtime().log.info("%s pipeline ready.", spec.label)
         return bundle
 
-    return _load_managed_model(
+    return _runtime()._load_managed_model(
         model_key,
         factory,
         unload_fn_factory=lambda bundle: lambda: _unload_hidream_o1_bundle(bundle),
     )
 
 def get_hidream_o1_dev_pipe():
-    return get_hidream_o1_pipe(MODEL_HIDREAM_O1_DEV)
+    return get_hidream_o1_pipe(_runtime().MODEL_HIDREAM_O1_DEV)
 
 __all__ = (
     '_ensure_hidream_o1',
@@ -270,4 +267,3 @@ __all__ = (
     'get_hidream_o1_pipe',
     'get_hidream_o1_dev_pipe',
 )
-_seal_runtime_module(globals())

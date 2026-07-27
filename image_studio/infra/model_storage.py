@@ -10,7 +10,6 @@ from typing import Any
 
 from ..errors import StorageError, UserInputError
 
-
 NONE_CHOICE = "(none)"
 
 

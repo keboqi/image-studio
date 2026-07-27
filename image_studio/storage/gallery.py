@@ -1,22 +1,39 @@
-"""Extracted runtime implementation."""
+"""Generated-media gallery persistence."""
 
 from __future__ import annotations
-from image_studio.errors import UserInputError
 
-# --- extracted runtime implementation ---
-import sys as _runtime_sys
 import logging
 import os
 import subprocess
-from PIL import Image
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
+from PIL import Image
+
+from .output_store import (
+    OUTPUT_PREVIEW_SUFFIX,
+    _resolve_output_file_path,
+    ensure_webp_preview,
+    related_image_artifact_paths,
+)
 
 log = logging.getLogger(__name__)
+
+MAX_GALLERY_IMAGES = 50
+MAX_OUTPUT_FILES = 500
+GALLERY_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
+GALLERY_VIDEO_EXTENSIONS = (".mp4", ".webm", ".avi", ".mov")
+
+_output_dir: str | None = None
+
+
+def configure_gallery(output_dir: str) -> None:
+    global _output_dir
+    _output_dir = output_dir
+
+
+def _root() -> str:
+    if _output_dir is None:
+        raise RuntimeError("Gallery storage is not configured.")
+    return _output_dir
 
 
 class VideoThumbnailer:
@@ -35,7 +52,12 @@ class VideoThumbnailer:
                 command.extend(["-ss", seek])
             command.extend(["-i", video_path, "-vframes", "1", "-q:v", "2", thumbnail])
             try:
-                subprocess.run(command, capture_output=True, timeout=self.timeout, check=False)
+                subprocess.run(
+                    command,
+                    capture_output=True,
+                    timeout=self.timeout,
+                    check=False,
+                )
             except (OSError, subprocess.SubprocessError) as exc:
                 log.error("FFmpeg failed to extract thumbnail for %s: %s", video_path, exc)
                 break
@@ -51,7 +73,8 @@ class VideoThumbnailer:
 
 video_thumbnailer = VideoThumbnailer()
 
-def delete_image(path):
+
+def delete_image(path: object):
     if not path or not isinstance(path, str):
         return get_gallery_images()
     try:
@@ -63,100 +86,100 @@ def delete_image(path):
             if os.path.isfile(safe_path):
                 os.remove(safe_path)
                 log.info("Deleted image artifact: %s", safe_path)
-    except Exception as e:
-        log.error("Error deleting image %s: %s", path, e)
+    except (OSError, ValueError) as exc:
+        log.error("Error deleting image %s: %s", path, exc)
     return get_gallery_images()
+
 
 def delete_all_images():
-    if not os.path.exists(OUTPUT_DIR): return []
-    for f in os.listdir(OUTPUT_DIR):
-        if f.lower().endswith(GALLERY_IMAGE_EXTENSIONS) and not f.endswith(".thumb.jpg"):
-            try: os.remove(os.path.join(OUTPUT_DIR, f))
-            except: pass
+    root = _root()
+    if not os.path.exists(root):
+        return []
+    for name in os.listdir(root):
+        if name.lower().endswith(GALLERY_IMAGE_EXTENSIONS) and not name.endswith(
+            ".thumb.jpg"
+        ):
+            try:
+                os.remove(os.path.join(root, name))
+            except OSError as exc:
+                log.warning("Could not delete image %s: %s", name, exc)
     return get_gallery_images()
 
+
 def delete_all_videos():
-    if not os.path.exists(OUTPUT_DIR): return []
-    for f in os.listdir(OUTPUT_DIR):
-        if f.lower().endswith(GALLERY_VIDEO_EXTENSIONS) or f.endswith(".thumb.jpg"):
-            try: os.remove(os.path.join(OUTPUT_DIR, f))
-            except: pass
+    root = _root()
+    if not os.path.exists(root):
+        return []
+    for name in os.listdir(root):
+        if name.lower().endswith(GALLERY_VIDEO_EXTENSIONS) or name.endswith(".thumb.jpg"):
+            try:
+                os.remove(os.path.join(root, name))
+            except OSError as exc:
+                log.warning("Could not delete video artifact %s: %s", name, exc)
     return []
 
+
 def get_video_gallery_images():
-    if not os.path.exists(OUTPUT_DIR):
+    root = _root()
+    if not os.path.exists(root):
         return []
-    with os.scandir(OUTPUT_DIR) as it:
+    with os.scandir(root) as entries:
         videos = [
-            (e.path, e.stat().st_mtime)
-            for e in it
-            if e.name.lower().endswith(GALLERY_VIDEO_EXTENSIONS)
+            (entry.path, entry.stat().st_mtime)
+            for entry in entries
+            if entry.name.lower().endswith(GALLERY_VIDEO_EXTENSIONS)
         ]
-    videos.sort(key=lambda x: x[1], reverse=True)
-    
-    gallery_items = []
-    for p, _ in videos[:MAX_GALLERY_IMAGES]:
-        thumb_path = video_thumbnailer.ensure(p)
-        if thumb_path:
-            gallery_items.append((thumb_path, os.path.basename(p)))
-    return gallery_items
+    videos.sort(key=lambda item: item[1], reverse=True)
+    items = []
+    for path, _mtime in videos[:MAX_GALLERY_IMAGES]:
+        thumbnail = video_thumbnailer.ensure(path)
+        if thumbnail:
+            items.append((thumbnail, os.path.basename(path)))
+    return items
 
 
 def get_gallery_images():
-    if not os.path.exists(OUTPUT_DIR):
+    root = _root()
+    if not os.path.exists(root):
         return []
-    with os.scandir(OUTPUT_DIR) as it:
+    with os.scandir(root) as entries:
         raw_images = []
-        for e in it:
-            lower = e.name.lower()
+        for entry in entries:
+            lower = entry.name.lower()
             if not lower.endswith(GALLERY_IMAGE_EXTENSIONS):
                 continue
-            if e.name.endswith(".thumb.jpg") or lower.endswith(OUTPUT_PREVIEW_SUFFIX):
+            if entry.name.endswith(".thumb.jpg") or lower.endswith(OUTPUT_PREVIEW_SUFFIX):
                 continue
-            raw_images.append((e.path, e.stat().st_mtime))
+            raw_images.append((entry.path, entry.stat().st_mtime))
 
-    images = []
-    for raw_path, mtime in raw_images:
-        preview_path = ensure_webp_preview(raw_path)
-        images.append((preview_path, raw_path, mtime))
-    images.sort(key=lambda x: x[2], reverse=True)
-    
-    # Enforce limit
+    images = [
+        (ensure_webp_preview(raw_path), raw_path, modified)
+        for raw_path, modified in raw_images
+    ]
+    images.sort(key=lambda item: item[2], reverse=True)
+
     if len(images) > MAX_OUTPUT_FILES:
-        for _, raw_path, _ in images[MAX_OUTPUT_FILES:]:
+        for _preview, raw_path, _modified in images[MAX_OUTPUT_FILES:]:
             for artifact_path in related_image_artifact_paths(raw_path):
                 try:
                     if os.path.exists(artifact_path):
                         os.remove(artifact_path)
-                except OSError:
-                    pass
+                except OSError as exc:
+                    log.warning("Could not prune gallery artifact %s: %s", artifact_path, exc)
         images = images[:MAX_OUTPUT_FILES]
-        
-    return [(preview_path, os.path.basename(raw_path)) for preview_path, raw_path, _ in images[:MAX_GALLERY_IMAGES]]
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    return [
+        (preview, os.path.basename(raw))
+        for preview, raw, _modified in images[:MAX_GALLERY_IMAGES]
+    ]
 
 
 __all__ = (
-    'VideoThumbnailer',
-    'delete_image',
-    'delete_all_images',
-    'delete_all_videos',
-    'get_video_gallery_images',
-    'get_gallery_images',
+    "VideoThumbnailer",
+    "configure_gallery",
+    "delete_all_images",
+    "delete_all_videos",
+    "delete_image",
+    "get_gallery_images",
+    "get_video_gallery_images",
 )
-_seal_runtime_module(globals())

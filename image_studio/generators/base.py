@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 
 class UIRequest:
@@ -11,7 +11,7 @@ class UIRequest:
 
     @classmethod
     def field_names(cls) -> tuple[str, ...]:
-        return tuple(item.name for item in fields(cls))
+        return tuple(item.name for item in fields(cast(Any, cls)))
 
     @classmethod
     def from_mapping(cls, values: dict[str, Any]):
@@ -20,11 +20,14 @@ class UIRequest:
     @classmethod
     def component_inputs(
         cls,
-        components: dict[str, Any],
+        components: Any,
         aliases: dict[str, str] | None = None,
     ) -> list[Any]:
         aliases = aliases or {}
-        return [components[aliases.get(name, name)] for name in cls.field_names()]
+        return [
+            getattr(components, aliases.get(name, name))
+            for name in cls.field_names()
+        ]
 
 
 @dataclass(frozen=True)

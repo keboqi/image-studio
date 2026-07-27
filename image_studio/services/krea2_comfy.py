@@ -1,48 +1,78 @@
-"""Extracted runtime implementation."""
+"""Krea 2 ComfyUI client and managed backend lifecycle."""
 
 from __future__ import annotations
+
+import io
+import json
+import logging
+import os
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import TYPE_CHECKING, Any
+
+from PIL import Image
+
+from image_studio.config import Krea2Config
 from image_studio.errors import BackendUnavailableError
-from image_studio.services.managed_runtime import ManagedScriptConfig, ManagedScriptService
+from image_studio.infra.managed_service import ManagedScriptConfig, ManagedScriptService
+from image_studio.infra.model_manager import ModelManager
 
-# --- extracted runtime implementation ---
-import sys as _runtime_sys
-from dataclasses import dataclass, field
-from image_studio.runtime_binding import bind_module as _bind_runtime_module, seal_module as _seal_runtime_module
+log = logging.getLogger(__name__)
 
-_runtime_source = _runtime_sys.modules.get('image_studio.runtime') or _runtime_sys.modules.get('image_studio.app') or _runtime_sys.modules.get('__main__')
-if _runtime_source is not None:
-    _bind_runtime_module(globals(), vars(_runtime_source))
+if TYPE_CHECKING:
+    import torch
+
 
 class Krea2ComfyService(ManagedScriptService):
     """Krea-2 backend managed in an isolated ComfyUI venv."""
 
-    def __init__(self):
-        super().__init__(ManagedScriptConfig(
-            label="Krea2 ComfyUI",
-            manager_key=MODEL_KREA2_TURBO_NVFP4,
-            vram_mb=MODEL_SPECS[MODEL_KREA2_TURBO_NVFP4].vram_mb,
-            script=KREA2_COMFY_SCRIPT,
-            shell=KREA2_COMFY_BASH,
-            shell_env_name="KREA2_COMFY_BASH",
-            ready_timeout=KREA2_COMFY_READY_TIMEOUT,
-            start_timeout=KREA2_COMFY_START_TIMEOUT,
-            request_timeout=KREA2_COMFY_REQUEST_TIMEOUT,
-        ))
-        self.server_base = KREA2_COMFY_SERVER_BASE
-        self.comfy_dir = os.path.join(KREA2_COMFY_DIR, "ComfyUI")
+    def __init__(
+        self,
+        config: Krea2Config,
+        *,
+        model_manager: ModelManager | None = None,
+        model_key: str = "krea2_turbo_nvfp4",
+        vram_mb: int = 24_000,
+        execution_lock: Any = None,
+        bootstrap_allowed: bool = True,
+    ) -> None:
+        super().__init__(
+            ManagedScriptConfig(
+                label="Krea2 ComfyUI",
+                manager_key=model_key,
+                vram_mb=vram_mb,
+                script=str(config.script),
+                shell=config.shell,
+                shell_env_name="KREA2_COMFY_BASH",
+                ready_timeout=config.ready_timeout,
+                start_timeout=config.start_timeout,
+                request_timeout=config.request_timeout,
+                working_dir=str(config.script.parent),
+            ),
+            model_manager=model_manager,
+            execution_lock=execution_lock,
+            bootstrap_allowed=bootstrap_allowed,
+            logger=log,
+        )
+        self.server_base = config.server_base
+        self.comfy_dir = os.path.join(str(config.directory), "ComfyUI")
+        self.port = str(config.port)
+        self.request_timeout = config.request_timeout
 
     def _script_env(self) -> dict[str, str]:
         env = super()._script_env()
-        env["PORT"] = KREA2_COMFY_PORT
+        env["PORT"] = self.port
         env["HOST"] = "0.0.0.0"
-        env["KREA2_COMFY_PORT"] = KREA2_COMFY_PORT
+        env["KREA2_COMFY_PORT"] = self.port
         env["READY_TIMEOUT"] = str(self.config.ready_timeout)
         env["REQUEST_TIMEOUT"] = str(self.config.request_timeout)
         env.setdefault("PYTHONIOENCODING", "utf-8")
         return env
 
     def is_healthy(self) -> bool:
-        if _NO_BOOTSTRAP:
+        if not self.bootstrap_allowed:
             return False
         try:
             req = urllib.request.Request(f"{self.server_base}/system_stats", method="GET")
@@ -190,7 +220,7 @@ class Krea2ComfyService(ManagedScriptService):
 
     def _poll_history_outputs(self, prompt_id: str, require_latent: bool = False):
         """Poll once for either image-only or image-plus-latent output."""
-        deadline = time.time() + KREA2_COMFY_REQUEST_TIMEOUT
+        deadline = time.time() + self.request_timeout
         while time.time() < deadline:
             history = self._comfy_request(
                 f"/history/{urllib.parse.quote(prompt_id)}", timeout=60,
@@ -270,7 +300,7 @@ class Krea2ComfyService(ManagedScriptService):
         })
         url = f"{self.server_base}/view?{params}"
         req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=KREA2_COMFY_REQUEST_TIMEOUT) as res:
+        with urllib.request.urlopen(req, timeout=self.request_timeout) as res:
             image_bytes = res.read()
         image = Image.open(io.BytesIO(image_bytes))
         return image.convert("RGB")
@@ -285,7 +315,8 @@ class Krea2ComfyService(ManagedScriptService):
         seed: int,
     ) -> tuple[Image.Image, float]:
         self.ensure_running()
-        model_mgr.touch(self.mgr_key)
+        if self.model_manager is not None:
+            self.model_manager.touch(self.mgr_key)
         workflow = self._build_workflow(
             prompt=prompt,
             width=width,
@@ -329,7 +360,8 @@ class Krea2ComfyService(ManagedScriptService):
         PiD decoder can work directly on the native KSampler latents.
         """
         self.ensure_running()
-        model_mgr.touch(self.mgr_key)
+        if self.model_manager is not None:
+            self.model_manager.touch(self.mgr_key)
         workflow = self._build_workflow_with_latent(
             prompt=prompt,
             width=width,
@@ -360,4 +392,3 @@ class Krea2ComfyService(ManagedScriptService):
 __all__ = (
     'Krea2ComfyService',
 )
-_seal_runtime_module(globals())

@@ -1,0 +1,4 @@
+-r requirements-dev.txt
+numpy>=1.26
+pillow>=10
+
