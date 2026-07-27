@@ -1106,12 +1106,12 @@ def _hf_download_local(repo_id: str, local_dir: str, *args: str):
 
 
 def _import_image_studio_app():
-    """Import the modular application entry point from the mounted package."""
+    """Compose the application from the mounted package."""
     if "/root" not in sys.path:
         sys.path.append("/root")
-    from image_studio import app as image_studio_app
+    from image_studio.app import create_application
 
-    return image_studio_app
+    return create_application()
 
 
 def _download_pid_models():
@@ -1345,7 +1345,7 @@ def _patch_modal_service(service, marker: str):
 
 def _patch_modal_services(application):
     """Apply Modal persistence hooks to services owned by AppContext."""
-    context = application.APP_CONTEXT
+    context = application.context
     _patch_modal_service(context.diffusiongemma, "_modal_diffusiongemma_vllm_patch")
     _patch_modal_service(context.krea2, "_modal_krea2_comfy_patch")
 
@@ -1362,7 +1362,7 @@ def _load_image_studio_app():
 
 def _register_vllm_as_loaded(application):
     """Tell the application model manager that vLLM is already running."""
-    service = application.APP_CONTEXT.diffusiongemma
+    service = application.context.diffusiongemma
     if service.is_healthy():
         service._register()
         print("DiffusionGemma vLLM registered as loaded in model manager.")
@@ -1387,7 +1387,7 @@ def _prefer_local_gemma_upsampler():
     # module, so update both owners rather than patching the old monolith.
     prompting._ideogram4_default_upsampler = local_gemma_default
     generate._ideogram4_default_upsampler = local_gemma_default
-    # Keep compatibility for callers resolving the helper through app.__getattr__.
+    # Keep compatibility for callers resolving the helper through the runtime.
     runtime = sys.modules.get("image_studio.runtime")
     if runtime is not None:
         runtime._ideogram4_default_upsampler = local_gemma_default
@@ -1399,23 +1399,23 @@ def _build_modal_fastapi_app(application):
     import gradio as gr
     from fastapi import FastAPI
 
-    demo = application.build_ui(application.APP_CONTEXT)
+    demo = application.build_ui()
     demo.queue(max_size=4, default_concurrency_limit=1)
     fastapi_app = FastAPI()
     proxy_api_key = os.environ.get("IMAGE_STUDIO_VLLM_PROXY_API_KEY", "").strip()
     route_options = {
         "vllm_proxy": True,
         "api_key": proxy_api_key,
-        "model_catalog_provider": application.IMAGE_MODEL_EXECUTOR.catalog,
+        "model_catalog_provider": application.model_executor.catalog,
     }
     # Modal mounts Gradio at "/", so application routes must be registered on
     # the parent first or the Gradio mount can consume them.
     route_host = type("ModalRouteHost", (), {"app": fastapi_app})()
-    application.attach_app_routes(route_host, **route_options)
+    application.attach_routes(route_host, **route_options)
     mounted_app = gr.mount_gradio_app(fastapi_app, demo, path="/")
     # Also attach to Gradio's own app. The modular route helper is idempotent
     # and promotes named routes ahead of Gradio's broad fallback route.
-    application.attach_app_routes(demo, **route_options)
+    application.attach_routes(demo, **route_options)
     return mounted_app
 
 
