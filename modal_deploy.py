@@ -1124,10 +1124,10 @@ def _download_pid_models():
         "checkpoints/QwenImage_VAE_2d.pth",
         "checkpoints/flux2_ae.safetensors",
         "checkpoints/PiD_res2k_sr4x_official_flux_distill_4step/model_ema_bf16.pth",
-        "checkpoints/PiD_res2kto4k_sr4x_official_flux_distill_4step/model_ema_bf16.pth",
-        "checkpoints/PiD_res2kto4k_sr4x_official_qwenimage_distill_4step/model_ema_bf16.pth",
+        "checkpoints/PiD_v1pt5_res2kto4k_sr4x_official_flux_distill_4step/model_ema_bf16.pth",
+        "checkpoints/PiD_v1pt5_res2kto4k_sr4x_official_qwenimage_distill_4step/model_ema_bf16.pth",
         "checkpoints/PiD_res2k_sr4x_official_flux2_distill_4step/*",
-        "checkpoints/PiD_res2kto4k_sr4x_official_flux2_distill_4step_2606/*",
+        "checkpoints/PiD_v1pt5_res2kto4k_sr4x_official_flux2_distill_4step/*",
     )
 
 

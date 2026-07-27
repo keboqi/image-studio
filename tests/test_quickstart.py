@@ -45,3 +45,8 @@ def test_quickstart_defaults_to_env_only_and_gates_model_prefetch():
     assert 'KREA2_MODEL_MODE="${QUICKSTART_MODE}" bash deploy_krea2_comfy.sh install' in QUICKSTART
     assert 'LTX_WEB_MODEL_MODE="${QUICKSTART_MODE}" LTX_WEB_NO_LAUNCH=1' in QUICKSTART
     assert "sed -i" not in QUICKSTART
+
+
+def test_quickstart_prefetches_pid_v1pt5():
+    assert "PiD_v1pt5_res2kto4k_sr4x_official_flux2_distill_4step" in QUICKSTART
+    assert "PiD_res2kto4k_sr4x_official_flux2_distill_4step_2606" not in QUICKSTART

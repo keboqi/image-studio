@@ -104,6 +104,17 @@ def test_application_import_is_lightweight_and_runtime_remains_compatible(monkey
     assert callable(app.attach_app_routes)
     assert runtime.GenerationRequest.field_names()[0] == "mode"
     assert app.build_ui() is not None
+    assert runtime.PID_CKPT_2KTO4K_V1PT5 == "2kto4k_v1pt5"
+    assert runtime.PID_CKPT_2KTO4K not in runtime.PID_ZIMAGE_CKPT_CHOICES
+    for backbone in (
+        runtime.PID_BACKBONE_ZIMAGE,
+        runtime.PID_BACKBONE_QWEN,
+        runtime.PID_BACKBONE_IDEOGRAM4,
+    ):
+        spec = runtime.PID_CHECKPOINTS[backbone][runtime.PID_CKPT_2KTO4K_V1PT5]
+        assert "/PiD_v1pt5_res2kto4k_" in spec.relative_checkpoint_path
+        assert runtime._resolve_pid_ckpt_type(backbone, "auto", 1024, 1024) == "2kto4k_v1pt5"
+        assert runtime._resolve_pid_ckpt_type(backbone, "2kto4k", 1024, 1024) == "2kto4k_v1pt5"
 
     package_dir = Path(runtime.__file__).parent
     referenced_names = {

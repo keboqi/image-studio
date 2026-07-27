@@ -284,12 +284,18 @@ PID_MAX_LOW_SIDE = 1024
 PID_CKPT_AUTO = "auto"
 PID_CKPT_2K = "2k"
 PID_CKPT_2KTO4K = "2kto4k"
+PID_CKPT_2KTO4K_V1PT5 = "2kto4k_v1pt5"
+PID_CKPT_ALIASES = {
+    # Preserve existing API clients and saved UI values while transparently
+    # moving the supported latent spaces off NVIDIA's deprecated v1 weights.
+    PID_CKPT_2KTO4K: PID_CKPT_2KTO4K_V1PT5,
+}
 PID_BACKBONE_ZIMAGE = "zimage"
 PID_BACKBONE_QWEN = "qwenimage"
 PID_BACKBONE_IDEOGRAM4 = "ideogram4_flux2"
-PID_ZIMAGE_CKPT_CHOICES = [PID_CKPT_AUTO, PID_CKPT_2K, PID_CKPT_2KTO4K]
-PID_QWEN_CKPT_CHOICES = [PID_CKPT_AUTO, PID_CKPT_2KTO4K]
-PID_IDEOGRAM4_CKPT_CHOICES = [PID_CKPT_AUTO, PID_CKPT_2K, PID_CKPT_2KTO4K]
+PID_ZIMAGE_CKPT_CHOICES = [PID_CKPT_AUTO, PID_CKPT_2K, PID_CKPT_2KTO4K_V1PT5]
+PID_QWEN_CKPT_CHOICES = [PID_CKPT_AUTO, PID_CKPT_2KTO4K_V1PT5]
+PID_IDEOGRAM4_CKPT_CHOICES = [PID_CKPT_AUTO, PID_CKPT_2K, PID_CKPT_2KTO4K_V1PT5]
 PID_FLUX_AE_PATH = "checkpoints/ae.safetensors"
 PID_FLUX2_AE_PATH = "checkpoints/flux2_ae.safetensors"
 PID_QWEN_VAE_PATH = "checkpoints/QwenImage_VAE_2d.pth"
@@ -309,25 +315,25 @@ PID_CHECKPOINTS = {
             ),
             label="PiD 2k",
         ),
-        PID_CKPT_2KTO4K: PIDCheckpointSpec(
+        PID_CKPT_2KTO4K_V1PT5: PIDCheckpointSpec(
             registry_key=MODEL_ZIMAGE_PID_2KTO4K,
-            experiment="PiD_res2kto4k_sr4x_official_flux_distill_4step",
+            experiment="PiD_v1pt5_res2kto4k_sr4x_official_flux_distill_4step",
             relative_checkpoint_path=(
-                "checkpoints/PiD_res2kto4k_sr4x_official_flux_distill_4step/"
+                "checkpoints/PiD_v1pt5_res2kto4k_sr4x_official_flux_distill_4step/"
                 "model_ema_bf16.pth"
             ),
-            label="PiD 2kto4k",
+            label="PiD v1.5 2kto4k",
         ),
     },
     PID_BACKBONE_QWEN: {
-        PID_CKPT_2KTO4K: PIDCheckpointSpec(
+        PID_CKPT_2KTO4K_V1PT5: PIDCheckpointSpec(
             registry_key=MODEL_QWEN_PID_2KTO4K,
-            experiment="PiD_res2kto4k_sr4x_official_qwenimage_distill_4step",
+            experiment="PiD_v1pt5_res2kto4k_sr4x_official_qwenimage_distill_4step",
             relative_checkpoint_path=(
-                "checkpoints/PiD_res2kto4k_sr4x_official_qwenimage_distill_4step/"
+                "checkpoints/PiD_v1pt5_res2kto4k_sr4x_official_qwenimage_distill_4step/"
                 "model_ema_bf16.pth"
             ),
-            label="Qwen PiD 2kto4k",
+            label="Qwen PiD v1.5 2kto4k",
         ),
     },
     PID_BACKBONE_IDEOGRAM4: {
@@ -340,14 +346,14 @@ PID_CHECKPOINTS = {
             ),
             label="Ideogram Flux2 PiD 2k",
         ),
-        PID_CKPT_2KTO4K: PIDCheckpointSpec(
+        PID_CKPT_2KTO4K_V1PT5: PIDCheckpointSpec(
             registry_key=MODEL_IDEOGRAM4_PID_2KTO4K,
-            experiment="PiD_res2kto4k_sr4x_official_flux2_distill_4step",
+            experiment="PiD_v1pt5_res2kto4k_sr4x_official_flux2_distill_4step",
             relative_checkpoint_path=(
-                "checkpoints/PiD_res2kto4k_sr4x_official_flux2_distill_4step_2606/"
+                "checkpoints/PiD_v1pt5_res2kto4k_sr4x_official_flux2_distill_4step/"
                 "model_ema_bf16.pth"
             ),
-            label="Ideogram Flux2 PiD 2kto4k",
+            label="Ideogram Flux2 PiD v1.5 2kto4k",
         ),
     },
 }
@@ -639,8 +645,12 @@ MODEL_SPECS: dict[str, ManagedModelSpec] = {
     MODEL_ZIMAGE_TURBO: ManagedModelSpec(MODEL_ZIMAGE_TURBO, "Z-Image Turbo (FP4)", 7_000),
     MODEL_ZIMAGE_FULL: ManagedModelSpec(MODEL_ZIMAGE_FULL, "Z-Image Full (BF16)", 16_000),
     MODEL_ZIMAGE_PID_2K: ManagedModelSpec(MODEL_ZIMAGE_PID_2K, "PiD 4x Decoder (2k)", 12_000),
-    MODEL_ZIMAGE_PID_2KTO4K: ManagedModelSpec(MODEL_ZIMAGE_PID_2KTO4K, "PiD 4x Decoder (2kto4k)", 18_000),
-    MODEL_QWEN_PID_2KTO4K: ManagedModelSpec(MODEL_QWEN_PID_2KTO4K, "Qwen PiD 4x Decoder (2kto4k)", 18_000),
+    MODEL_ZIMAGE_PID_2KTO4K: ManagedModelSpec(
+        MODEL_ZIMAGE_PID_2KTO4K, "PiD v1.5 4x Decoder (2kto4k)", 18_000
+    ),
+    MODEL_QWEN_PID_2KTO4K: ManagedModelSpec(
+        MODEL_QWEN_PID_2KTO4K, "Qwen PiD v1.5 4x Decoder (2kto4k)", 18_000
+    ),
     MODEL_HIDREAM_O1_FULL: ManagedModelSpec(MODEL_HIDREAM_O1_FULL, "HiDream-O1-Image", 24_000),
     MODEL_HIDREAM_O1_DEV: ManagedModelSpec(MODEL_HIDREAM_O1_DEV, "HiDream-O1-Image-Dev", 24_000),
     MODEL_BOOGU_IMAGE_TURBO: ManagedModelSpec(
@@ -677,7 +687,9 @@ MODEL_SPECS: dict[str, ManagedModelSpec] = {
         MODEL_IDEOGRAM4_PID_2K, "Ideogram PiD 4x Decoder (2k)", 12_000
     ),
     MODEL_IDEOGRAM4_PID_2KTO4K: ManagedModelSpec(
-        MODEL_IDEOGRAM4_PID_2KTO4K, "Ideogram PiD 4x Decoder (2kto4k)", 18_000
+        MODEL_IDEOGRAM4_PID_2KTO4K,
+        "Ideogram PiD v1.5 4x Decoder (2kto4k)",
+        18_000,
     ),
     MODEL_SEEDVR2: ManagedModelSpec(MODEL_SEEDVR2, "SeedVR2 Upscaler", 12_000),
     MODEL_GEMMA: ManagedModelSpec(MODEL_GEMMA, "Gemma 4 12B (google BF16)", 26_000),

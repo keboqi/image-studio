@@ -90,11 +90,12 @@ def _pid_checkpoint_label(backbone: str, ckpt_type: str) -> str:
 def _resolve_pid_ckpt_type(backbone: str, requested: str, width: int, height: int) -> str:
     specs = _pid_checkpoint_specs(backbone)
     requested = (requested or _runtime().PID_CKPT_AUTO).strip()
+    requested = _runtime().PID_CKPT_ALIASES.get(requested, requested)
     if requested == _runtime().PID_CKPT_AUTO:
         if _runtime().PID_CKPT_2K in specs and max(width, height) <= 512:
             return _runtime().PID_CKPT_2K
-        if _runtime().PID_CKPT_2KTO4K in specs:
-            return _runtime().PID_CKPT_2KTO4K
+        if _runtime().PID_CKPT_2KTO4K_V1PT5 in specs:
+            return _runtime().PID_CKPT_2KTO4K_V1PT5
         return next(iter(specs))
     if requested not in specs:
         valid = ", ".join([_runtime().PID_CKPT_AUTO, *specs.keys()])
@@ -168,9 +169,6 @@ def _ensure_pid_vae_asset(backbone: str) -> str:
     return vae_path
 
 def _ensure_pid_experiment_available(backbone: str, spec: PIDCheckpointSpec):
-    if backbone != _runtime().PID_BACKBONE_QWEN:
-        return
-
     config_root = _runtime().os.path.join(_runtime().PID_DIR, "pid", "_src", "configs", "pid")
     for root, _dirs, files in _runtime().os.walk(config_root):
         for name in files:
@@ -185,8 +183,8 @@ def _ensure_pid_experiment_available(backbone: str, spec: PIDCheckpointSpec):
                 continue
 
     raise UserInputError(
-        "Your PiD checkout does not include the Qwen Image PiD experiment "
-        f"({spec.experiment}). Update or reclone {_runtime().PID_DIR} from {_runtime().PID_REPO}."
+        f"Your PiD checkout does not include the {backbone} experiment ({spec.experiment}). "
+        f"Update or reclone {_runtime().PID_DIR} from {_runtime().PID_REPO}."
     )
 
 def _pipeline_execution_device(pipe) -> _runtime().torch.device:
