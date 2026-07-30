@@ -88,6 +88,7 @@ BOOGU_IMAGE_MODEL_REPOS = {
     "Boogu-Image-0.1-Edit": "Boogu/Boogu-Image-0.1-Edit",
     "Boogu-Image-0.1-Edit-Turbo": "Boogu/Boogu-Image-0.1-Edit-Turbo",
 }
+SEEDVR2_REPO_URL = "https://github.com/keboqi/ComfyUI-SeedVR2_VideoUpscaler.git"
 
 # Krea-2 Turbo ComfyUI backend constants
 KREA2_COMFY_SCRIPT = "/root/deploy_krea2_comfy.sh"
@@ -682,7 +683,7 @@ image = (
     
     # SeedVR2 Setup
     .run_commands(
-        "git clone --depth 1 https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler.git /root/seedvr2_upscaler",
+        f"git clone --depth 1 {SEEDVR2_REPO_URL} /root/seedvr2_upscaler",
         "pip install -r /root/seedvr2_upscaler/requirements.txt"
     )
     

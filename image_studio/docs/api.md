@@ -94,6 +94,10 @@ preview_webp_path, status_text, raw_png_path, vram_markdown = client.predict(
 ### 3. Upscaling Images (SeedVR2)
 **Endpoint:** `/run/upscale` (or `api_name="upscale"`)
 
+The default remains the 7B FP8 model. For fast mode, pass
+`seedvr2_distill_6L_1.4B_sharp_fp16.safetensors`; the distilled model is optimized
+for 2×–4× still-image upscaling and uses substantially less memory.
+
 **Python Client Example:**
 ```python
 from gradio_client import Client, handle_file
@@ -165,6 +169,9 @@ For IC-LoRA, set `ic_lora_name` and provide either `ic_lora_reference_image` or 
 
 ### 6. Video Upscaling (SeedVR2)
 **Endpoint:** `/run/upscale_video` (or `api_name="upscale_video"`)
+
+The 1.4B checkpoint is selectable here as well, but its published evaluation is
+image-focused; use the default 7B model when maximum temporal fidelity matters.
 
 **Python Client Example:**
 ```python

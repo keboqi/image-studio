@@ -7,7 +7,7 @@ Image Studio is a GPU-first Gradio workspace for image generation, image editing
 - Generate images with Qwen Image, Z-Image, HiDream-O1, Ideogram 4, Boogu-Image, and Krea 2.
 - Edit images with Qwen Image Edit, HiDream-O1, or Boogu-Image.
 - Generate keyframe-, audio-, and IC-LoRA-guided video through LTX-Video.
-- Upscale images and video with SeedVR2, with optional PiD v1.5 4x decoding for supported image generators.
+- Upscale images and video with SeedVR2. The 7B FP8 model remains the default, with an optional fast 1.4B distilled mode for 2×–4× still-image upscaling and optional PiD v1.5 4x decoding for supported generators.
 - Remove visible, invisible, and metadata-based AI watermarks.
 - Chat with local multimodal Gemma models or the managed DiffusionGemma vLLM service.
 - Browse generated media, inspect saved metadata, and unload models from the UI.

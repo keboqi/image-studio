@@ -90,6 +90,7 @@ class ChatConfig:
 @dataclass(frozen=True)
 class SeedVR2Config:
     directory: Path
+    repository_url: str
 
 
 @dataclass(frozen=True)
@@ -215,7 +216,14 @@ class AppConfig:
                 assistant_tokens=env_int(snapshot, "GEMMA_NUM_ASSISTANT_TOKENS", 4, minimum=1),
                 default_model=env_str(snapshot, "IMAGE_STUDIO_CHAT_DEFAULT", "huihui") or "huihui",
             ),
-            seedvr2=SeedVR2Config(directory=root / "seedvr2_upscaler"),
+            seedvr2=SeedVR2Config(
+                directory=root / "seedvr2_upscaler",
+                repository_url=env_str(
+                    snapshot,
+                    "IMAGE_STUDIO_SEEDVR2_REPO",
+                    "https://github.com/keboqi/ComfyUI-SeedVR2_VideoUpscaler.git",
+                ),
+            ),
             ltx=LtxConfig(
                 directory=Path(env_str(snapshot, "LTX_WEB_DIR", str(root / "ltx-web"))),
                 api_base=env_str(snapshot, "LTX_WEB_API", "http://127.0.0.1:8000").rstrip("/"),

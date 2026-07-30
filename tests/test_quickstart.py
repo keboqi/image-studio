@@ -15,6 +15,7 @@ def test_quickstart_retains_full_service_setup():
         "Boogu/Boogu-Image-0.1-Turbo",
         "bash deploy_krea2_comfy.sh install",
         "hydra-core==1.3.2",
+        "keboqi/ComfyUI-SeedVR2_VideoUpscaler.git",
         "seedvr2_upscaler/requirements.txt",
         "keboqi/ltx-web.git",
         "LTX_WEB_MODEL_MODE=\"${QUICKSTART_MODE}\" LTX_WEB_NO_LAUNCH=1",

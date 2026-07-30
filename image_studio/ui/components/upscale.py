@@ -43,18 +43,31 @@ class UpscaleTab(ComponentSet):
     video_status: Any
 
 
+def _seedvr2_dropdown_choices(
+    models: list[str],
+    default_model: str,
+) -> list[str | tuple[str, str]]:
+    labels = {
+        default_model: "Default — SeedVR2 7B FP8",
+        _runtime().SEEDVR2_FAST_DIT: "Fast — SeedVR2 1.4B distilled FP16 (2×–4× recommended)",
+    }
+    return [(labels[model], model) if model in labels else model for model in models]
+
+
 def _build_upscale_tab(
     seedvr2_models: list[str],
     seedvr2_default: str,
     seedvr2_available: bool,
 ) -> UpscaleTab:
+    model_choices = _seedvr2_dropdown_choices(seedvr2_models, seedvr2_default)
     with _runtime().gr.Tab("Upscale", id=_runtime().TAB_UPSCALE):
         if not seedvr2_available:
             _runtime().gr.Markdown("**SeedVR2 upscaler is currently unavailable.** Check terminal logs for git or network errors.")
         else:
             _runtime().gr.Markdown(
                 "Upload an image or video and upscale it with the **SeedVR2** diffusion-based upscaler.  \n"
-                "Models are auto-downloaded on first use."
+                "Models are auto-downloaded on first use. The 7B model remains the default; choose "
+                "**Fast — SeedVR2 1.4B** for a smaller six-layer model optimized for 2×–4× still-image upscaling."
             )
         _runtime().gr.Markdown("### Image Upscale")
         with _runtime().gr.Row(equal_height=False):
@@ -69,7 +82,7 @@ def _build_upscale_tab(
                         0, 7680, 3584, step=64,
                         label="Max Resolution (0 = no limit)",
                     )
-                up_dit = _runtime().gr.Dropdown(seedvr2_models, value=seedvr2_default, label="DiT Model")
+                up_dit = _runtime().gr.Dropdown(model_choices, value=seedvr2_default, label="Upscale Mode / DiT Model")
                 up_color = _runtime().gr.Dropdown(
                     ["lab", "wavelet", "wavelet_adaptive", "hsv", "adain", "none"],
                     value="lab",
@@ -110,7 +123,7 @@ def _build_upscale_tab(
                         0, 7680, 3584, step=64,
                         label="Max Resolution (0 = no limit)",
                     )
-                vu_dit = _runtime().gr.Dropdown(seedvr2_models, value=seedvr2_default, label="DiT Model")
+                vu_dit = _runtime().gr.Dropdown(model_choices, value=seedvr2_default, label="Upscale Mode / DiT Model")
                 vu_color = _runtime().gr.Dropdown(
                     ["lab", "wavelet", "wavelet_adaptive", "hsv", "adain", "none"],
                     value="lab",
@@ -166,4 +179,5 @@ def _build_upscale_tab(
 
 __all__ = (
     '_build_upscale_tab',
+    '_seedvr2_dropdown_choices',
 )
