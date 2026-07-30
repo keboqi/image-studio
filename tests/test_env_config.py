@@ -21,7 +21,18 @@ def test_app_config_uses_one_explicit_snapshot(tmp_path):
     assert config.vllm.port == 9001
     assert config.vllm.api_base == "http://127.0.0.1:9001/v1"
     assert config.krea2.server_base == "http://127.0.0.1:9002"
+    assert config.seedvr2.repository_url == (
+        "https://github.com/keboqi/ComfyUI-SeedVR2_VideoUpscaler.git"
+    )
     assert config.no_bootstrap is True
+
+
+def test_seedvr2_repository_can_be_overridden(tmp_path):
+    config = AppConfig.from_env(
+        {"IMAGE_STUDIO_SEEDVR2_REPO": "https://example.test/seedvr2.git"},
+        base_dir=tmp_path,
+    )
+    assert config.seedvr2.repository_url == "https://example.test/seedvr2.git"
 
 
 def test_boogu_edit_turbo_model_can_be_configured(tmp_path):

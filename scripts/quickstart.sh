@@ -9,6 +9,7 @@ VENV_DIR="${VENV_DIR:-.venv}"
 PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 UV_BIN="${UV_BIN:-uv}"
 IMAGE_STUDIO_QUICKSTART_MODE="${IMAGE_STUDIO_QUICKSTART_MODE:-env-only}"
+SEEDVR2_REPO="${IMAGE_STUDIO_SEEDVR2_REPO:-https://github.com/keboqi/ComfyUI-SeedVR2_VideoUpscaler.git}"
 LAUNCH_ARGS=()
 
 log() {
@@ -308,7 +309,7 @@ else
 fi
 
 # SeedVR2 setup.
-clone_if_missing https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler.git \
+clone_if_missing "${SEEDVR2_REPO}" \
   seedvr2_upscaler --depth 1
 uv_install -r seedvr2_upscaler/requirements.txt
 

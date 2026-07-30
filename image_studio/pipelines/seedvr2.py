@@ -198,6 +198,13 @@ def _ensure_seedvr2_weight(s: dict, dit_model: str) -> str:
         raise UserInputError("SeedVR2 model download failed - check console logs.")
     return model_dir
 
+
+def _seedvr2_vram_budget(dit_model: str) -> int:
+    if dit_model == _runtime().SEEDVR2_FAST_DIT:
+        return 6_000
+    return _runtime().MODEL_SPECS[_runtime().MODEL_SEEDVR2].vram_mb
+
+
 def _clear_seedvr2_cache_on_model_change(s: dict, dit_model: str):
     if _seedvr2_state.loaded_model is None or _seedvr2_state.loaded_model == dit_model:
         return
@@ -403,7 +410,10 @@ def run_upscale(
     """Upscale a single image via the SeedVR2 4-phase pipeline (runs locally)."""
     seed = _runtime().normalize_seed(seed)
     progress(0.1, desc="Ensuring VRAM...")
-    _runtime().model_mgr.ensure_vram(_runtime().MODEL_SPECS[_runtime().MODEL_SEEDVR2].vram_mb, exclude=_runtime().MODEL_SEEDVR2)
+    _runtime().model_mgr.ensure_vram(
+        _seedvr2_vram_budget(dit_model),
+        exclude=_runtime().MODEL_SEEDVR2,
+    )
 
     progress(0.2, desc="Loading ModelManager...")
     s = _get_seedvr2()
@@ -490,7 +500,10 @@ def run_video_upscale(
     total_chunks = max(1, _runtime().math.ceil(frames_to_process / chunk_size))
 
     progress(0.1, desc="Ensuring VRAM...")
-    _runtime().model_mgr.ensure_vram(_runtime().MODEL_SPECS[_runtime().MODEL_SEEDVR2].vram_mb, exclude=_runtime().MODEL_SEEDVR2)
+    _runtime().model_mgr.ensure_vram(
+        _seedvr2_vram_budget(dit_model),
+        exclude=_runtime().MODEL_SEEDVR2,
+    )
 
     progress(0.15, desc="Loading SeedVR2...")
     s = _get_seedvr2()
@@ -631,6 +644,7 @@ __all__ = (
     '_open_seedvr2_video',
     '_seedvr2_video_output_path',
     '_ensure_seedvr2_weight',
+    '_seedvr2_vram_budget',
     '_clear_seedvr2_cache_on_model_change',
     '_seedvr2_device_plan',
     '_get_seedvr2_context',

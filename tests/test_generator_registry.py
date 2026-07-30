@@ -1,5 +1,10 @@
 from image_studio.generators.base import GenerationRequest
-from image_studio.generators.dispatch import run_generation_request
+from image_studio.generators.dispatch import (
+    SEEDVR2_DEFAULT_DIT,
+    SEEDVR2_DIT_MODELS,
+    SEEDVR2_FAST_DIT,
+    run_generation_request,
+)
 
 
 def test_typed_dispatch_uses_stable_model_id():
@@ -36,3 +41,10 @@ def test_typed_dispatch_uses_stable_model_id():
     assert captured["operation"] == "image.generate"
     assert captured["parameters"]["prompt"] == "a cat"
     assert captured["progress"] == "p"
+
+
+def test_seedvr2_fast_model_is_available_without_changing_the_default():
+    assert SEEDVR2_FAST_DIT in SEEDVR2_DIT_MODELS
+    assert SEEDVR2_DEFAULT_DIT == (
+        "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors"
+    )

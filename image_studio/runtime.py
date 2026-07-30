@@ -431,7 +431,7 @@ LIGHTNING_SCHEDULER = {
 # ---------------------------------------------------------------------------
 # SeedVR2 bootstrap: auto-clone + import
 # ---------------------------------------------------------------------------
-SEEDVR2_REPO = "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler.git"
+SEEDVR2_REPO = APP_CONFIG.seedvr2.repository_url
 SEEDVR2_DIR = str(APP_CONFIG.seedvr2.directory)
 SEEDVR2_REPO_SPEC = RepoSpec(
     name="SeedVR2",
@@ -1256,6 +1256,7 @@ export_public(_runtime_generators_zimage, globals())
 
 # Known model list (fallback when SeedVR2 isn't loaded yet for the dropdown)
 SEEDVR2_DIT_MODELS = [
+    "seedvr2_distill_6L_1.4B_sharp_fp16.safetensors",
     "seedvr2_ema_3b_fp8_e4m3fn.safetensors",
     "seedvr2_ema_3b_fp16.safetensors",
     "seedvr2_ema_3b-Q4_K_M.gguf",
@@ -1267,6 +1268,7 @@ SEEDVR2_DIT_MODELS = [
     "seedvr2_ema_7b_sharp_fp16.safetensors",
     "seedvr2_ema_7b_sharp-Q4_K_M.gguf",
 ]
+SEEDVR2_FAST_DIT = "seedvr2_distill_6L_1.4B_sharp_fp16.safetensors"
 SEEDVR2_DEFAULT_DIT = "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors"
 
 
