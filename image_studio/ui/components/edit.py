@@ -10,12 +10,12 @@ from image_studio.runtime_access import runtime_namespace as _runtime
 from image_studio.ui.components.base import ComponentSet
 
 EDIT_VISIBILITY_ORDER = (
-    "negative", "qwen", "boogu", "hidream", "size", "aspect", "hidream_version",
+    "negative", "qwen", "boogu", "hidream", "variant", "size", "aspect", "hidream_version",
     "boogu_guidance", "boogu_steps",
 )
 
 
-def _edit_mode_visibility_updates(model_name: str, boogu_version: str):
+def _edit_mode_visibility_updates(model_name: str, boogu_version: str, hidream_version: str):
     """Return Gradio visibility updates for editor-specific controls."""
     model_name = model_name or "Qwen Image Edit"
     boogu_version = _runtime()._normalize_boogu_edit_version(boogu_version)
@@ -25,6 +25,16 @@ def _edit_mode_visibility_updates(model_name: str, boogu_version: str):
     boogu_base = boogu and boogu_version == _runtime().BOOGU_IMAGE_VERSION_BASE
     qwen = not hidream and not boogu and not sensenova
     sized = hidream or boogu or sensenova
+    variant_choices = (
+        _runtime().SENSENOVA_QUALITY_CHOICES
+        if sensenova else ["Dev", "Best Quality"]
+    )
+    variant_default = (
+        _runtime().SENSENOVA_QUALITY_FAST if sensenova else "Dev"
+    )
+    variant_value = (
+        hidream_version if hidream_version in variant_choices else variant_default
+    )
     if boogu_base:
         boogu_steps_update = _runtime().gr.update(
             visible=True,
@@ -45,7 +55,12 @@ def _edit_mode_visibility_updates(model_name: str, boogu_version: str):
         "negative": _runtime().gr.update(visible=qwen or boogu_base),
         "qwen": _runtime().gr.update(visible=qwen),
         "boogu": _runtime().gr.update(visible=boogu),
-        "hidream": _runtime().gr.update(visible=hidream),
+        "hidream": _runtime().gr.update(visible=hidream or sensenova),
+        "variant": _runtime().gr.update(
+            choices=variant_choices,
+            value=variant_value,
+            label=("Edit preset (8-step is experimental)" if sensenova else "HiDream-O1 Version"),
+        ),
         "size": _runtime().gr.update(visible=sized),
         "aspect": _runtime().gr.update(visible=sized),
         "hidream_version": _runtime().gr.update(visible=hidream or sensenova),
@@ -150,12 +165,13 @@ def _build_edit_tab() -> EditTab:
                     edit_to_video = _runtime().gr.Button("Send to Video", size="sm", elem_classes=["send-btn"])
                 e_st = _runtime().gr.Markdown("", elem_id="edit-status")
                 e_raw = _runtime().gr.File(label="Raw PNG Download", interactive=False)
-        visibility_inputs = [e_model, e_boogu_version]
+        visibility_inputs = [e_model, e_boogu_version, e_hd_version]
         visibility_outputs = [
             e_qwen_neg_group,
             e_qwen_param_group,
             e_boogu_param_group,
             e_hidream_version_group,
+            e_hd_version,
             e_hidream_size_group,
             e_hidream_aspect_group,
             e_hidream_seed_group,
@@ -168,6 +184,11 @@ def _build_edit_tab() -> EditTab:
             outputs=visibility_outputs,
         )
         e_boogu_version.change(
+            fn=_edit_mode_visibility_updates,
+            inputs=visibility_inputs,
+            outputs=visibility_outputs,
+        )
+        e_hd_version.change(
             fn=_edit_mode_visibility_updates,
             inputs=visibility_inputs,
             outputs=visibility_outputs,

@@ -69,6 +69,7 @@ def run_sensenova_edit(
     width: int,
     height: int,
     keep_original_aspect: bool,
+    quality: str,
     seed: int,
     progress=NO_PROGRESS,
 ):
@@ -80,9 +81,12 @@ def run_sensenova_edit(
         width, height = _sensenova_aspect_size(images[0].width, images[0].height, int(width) * int(height))
     width, height = _runtime().validate_sensenova_dims(width, height)
     seed = _runtime().resolve_seed(seed)
-    progress(0.1, desc="Loading SenseNova U1.5 50-step base...")
-    bundle = _runtime().get_sensenova_pipe(_runtime().MODEL_SENSENOVA_BASE)
-    progress(0.3, desc="Editing with SenseNova U1.5...")
+    model_key = _runtime().SENSENOVA_QUALITY_KEYS.get(
+        quality, _runtime().MODEL_SENSENOVA_FAST
+    )
+    progress(0.1, desc="Loading SenseNova U1.5...")
+    bundle = _runtime().get_sensenova_pipe(model_key)
+    progress(0.3, desc=f"Editing with SenseNova U1.5 {bundle['label']}...")
 
     def infer():
         with _runtime().torch.inference_mode():
@@ -91,12 +95,12 @@ def run_sensenova_edit(
                 prompt,
                 images,
                 image_size=(width, height),
-                cfg_scale=4.0,
+                cfg_scale=bundle["cfg_scale"],
                 img_cfg_scale=1.0,
                 cfg_norm="none",
                 timestep_shift=3.0,
                 cfg_interval=(0.0, 1.0),
-                num_steps=50,
+                num_steps=bundle["steps"],
                 batch_size=1,
                 seed=seed,
                 think_mode=False,
@@ -105,7 +109,11 @@ def run_sensenova_edit(
 
     image, elapsed = _runtime().timed_result(infer)
     status = _runtime().ok_status(
-        elapsed, f"{len(images)} ref(s)", f"{image.width}x{image.height}", "50-step base"
+        elapsed,
+        f"{len(images)} ref(s)",
+        f"{image.width}x{image.height}",
+        bundle["label"],
+        "experimental edit" if model_key == _runtime().MODEL_SENSENOVA_FAST else "documented edit",
     )
     return _runtime().finalize_image_result(
         "sensenova_edit", image, status, seed, always_seed=True

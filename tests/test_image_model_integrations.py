@@ -69,3 +69,27 @@ def test_builtin_image_models_share_one_typed_registry():
     assert result == "sensenova_generate"
     assert calls[-1][1] == ("poster", 2048, 2048, "Quality (50-step)", 7)
     assert calls[-1][2]["progress"] == "sn"
+
+    result = registry.resolve("sensenova-u1.5").execute(
+        Operation.IMAGE_EDIT,
+        {
+            "img1": "source",
+            "prompt": "change the sky",
+            "quality": "Fast (8-step LoRA)",
+            "seed": 9,
+        },
+        progress="edit",
+    )
+    assert result == "sensenova_edit"
+    assert calls[-1][1] == (
+        "source",
+        None,
+        None,
+        "change the sky",
+        1024,
+        1024,
+        True,
+        "Fast (8-step LoRA)",
+        9,
+    )
+    assert calls[-1][2]["progress"] == "edit"

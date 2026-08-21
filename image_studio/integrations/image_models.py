@@ -109,6 +109,10 @@ class SenseNovaEditParameters:
     width: int = _dimension()
     height: int = _dimension()
     keep_original_aspect: bool = True
+    quality: str = field(
+        default="Fast (8-step LoRA)",
+        metadata={"choices": ("Fast (8-step LoRA)", "Quality (50-step)")},
+    )
     seed: int = _seed()
 
 
@@ -241,7 +245,7 @@ def build_image_model_registry(functions: ImageModelFunctions) -> ModelRegistry:
                 operations=(Operation.IMAGE_GENERATE, Operation.IMAGE_EDIT),
                 description=(
                     "Official in-process SenseNova U1.5 inference: 50-step generation/edit "
-                    "and the official 8-step generation LoRA."
+                    "and the official 8-step generation LoRA, with experimental LoRA editing."
                 ),
                 order=35,
             ),
@@ -262,6 +266,7 @@ def build_image_model_registry(functions: ImageModelFunctions) -> ModelRegistry:
                         p.width,
                         p.height,
                         p.keep_original_aspect,
+                        p.quality,
                         p.seed,
                         progress=progress,
                     ),

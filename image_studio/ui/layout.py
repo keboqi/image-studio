@@ -33,7 +33,7 @@ def _build_header(context: AppContext):
                 "# Image Studio WebUI\n"
                 "**Text-to-Image** generation, **Multi-Image Editing**, **SeedVR2 Upscaling**, "
                 "**HiDream-O1 Full/Dev** generation/editing, "
-                "**SenseNova U1.5** 50-step generation/editing and 8-step generation, "
+                "**SenseNova U1.5** 50-step generation/editing and experimental 8-step editing, "
                 "**Boogu-Image** generation/editing, "
                 "**Ideogram 4** generation, "
                 "**Krea2 Turbo (ComfyUI)** generation, "

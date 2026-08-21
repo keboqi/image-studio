@@ -86,7 +86,7 @@ preview_webp_path, status_text, raw_png_path, vram_markdown = client.predict(
     height=1024,                           # int (HiDream, SenseNova, or Boogu-Image)
     keep_original_aspect=True,             # bool (HiDream/SenseNova/Boogu-Image single source)
     hidream_seed=-1,                       # float (HiDream or SenseNova)
-    hidream_version="Dev",                 # str (HiDream-O1 only): "Dev" or "Best Quality"
+    hidream_version="Dev",                 # str: HiDream "Dev"/"Best Quality"; SenseNova defaults to experimental "Fast (8-step LoRA)" or "Quality (50-step)"
     api_name="/edit"
 )
 ```

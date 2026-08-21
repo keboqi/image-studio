@@ -5,6 +5,12 @@ from image_studio.generators.sensenova import _sensenova_aspect_size
 from image_studio.validation import validate_sensenova_dims
 
 
+def test_sensenova_fast_edit_is_the_default_typed_preset():
+    from image_studio.integrations.image_models import SenseNovaEditParameters
+
+    assert SenseNovaEditParameters().quality == "Fast (8-step LoRA)"
+
+
 def test_sensenova_dimensions_require_upstream_32_pixel_grid():
     assert validate_sensenova_dims(1024, 768) == (1024, 768)
     with pytest.raises(UserInputError, match="multiples of 32"):

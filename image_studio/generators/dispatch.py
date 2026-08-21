@@ -184,6 +184,7 @@ def edit_parameters(request: EditRequest) -> dict[str, Any]:
             "width": request.width,
             "height": request.height,
             "keep_original_aspect": request.keep_original_aspect,
+            "quality": request.hidream_version,
             "seed": request.hidream_seed,
         },
         "boogu-image": {
