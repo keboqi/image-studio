@@ -24,7 +24,7 @@ exclude = [
     "image_studio_webui.py",
     "image_studio/runtime.py",
     "image_studio/pipelines/",
-    "image_studio/generators/(boogu|chat|hidream|ideogram|krea2|qwen|zimage).py",
+    "image_studio/generators/(boogu|chat|hidream|ideogram|krea2|qwen|sensenova|zimage).py",
     "image_studio/ui/components/",
     "image_studio/ui/(gallery_actions|models).py",
 ]

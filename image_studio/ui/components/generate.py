@@ -11,7 +11,7 @@ from image_studio.ui.components.base import ComponentSet
 
 GEN_VISIBILITY_ORDER = (
     "negative", "qwen", "zimage", "zimage_turbo", "zimage_full", "pid",
-    "hidream", "ideogram", "boogu", "krea2", "boogu_base", "boogu_steps", "pid_checkpoint",
+    "hidream", "variant", "ideogram", "boogu", "krea2", "boogu_base", "boogu_steps", "pid_checkpoint",
 )
 
 
@@ -27,9 +27,20 @@ def _gen_mode_visibility_updates(mode: str, zimage_version: str, hidream_version
     turbo = zimage and zimage_version == "Turbo"
     zfull = zimage and zimage_version == "Best Quality"
     hidream = mode == _runtime().HIDREAM_O1_MODE
+    sensenova = mode == _runtime().SENSENOVA_MODE
     ideogram = mode == _runtime().IDEOGRAM4_MODE
     boogu = mode == _runtime().BOOGU_IMAGE_MODE
     krea2 = mode == _runtime().KREA2_MODE
+    variant_choices = (
+        _runtime().SENSENOVA_QUALITY_CHOICES
+        if sensenova else ["Dev", "Best Quality"]
+    )
+    variant_default = (
+        _runtime().SENSENOVA_QUALITY_FAST if sensenova else "Dev"
+    )
+    variant_value = (
+        hidream_version if hidream_version in variant_choices else variant_default
+    )
     boogu_base = boogu and boogu_version == _runtime().BOOGU_IMAGE_VERSION_BASE
     zimage_family = turbo or zfull
     pid_capable = qwen or zimage_family or ideogram or krea2
@@ -65,7 +76,12 @@ def _gen_mode_visibility_updates(mode: str, zimage_version: str, hidream_version
         "zimage_turbo": _runtime().gr.update(visible=turbo),
         "zimage_full": _runtime().gr.update(visible=zfull),
         "pid": _runtime().gr.update(visible=pid_capable),
-        "hidream": _runtime().gr.update(visible=hidream),
+        "hidream": _runtime().gr.update(visible=hidream or sensenova),
+        "variant": _runtime().gr.update(
+            choices=variant_choices,
+            value=variant_value,
+            label=("Inference preset" if sensenova else "HiDream-O1 Version"),
+        ),
         "ideogram": _runtime().gr.update(visible=ideogram),
         "boogu": _runtime().gr.update(visible=boogu),
         "krea2": _runtime().gr.update(visible=krea2),
@@ -207,7 +223,6 @@ def _build_generate_tab() -> GenerateTab:
                             gen_full_steps = _runtime().gr.Slider(20, 60, 30, step=1, label="Steps")
                             gen_full_guidance = _runtime().gr.Slider(1.0, 8.0, 4.0, step=0.25, label="Guidance Scale (CFG)")
                     with _runtime().gr.Group(visible=False, elem_id="gen-hidream-group") as gen_hidream_group:
-                        _runtime().gr.Markdown("**HiDream-O1 Settings**")
                         gen_hidream_version = _runtime().gr.Dropdown(["Dev", "Best Quality"], value="Dev", label="HiDream-O1 Version")
                     with _runtime().gr.Group(visible=False, elem_id="gen-boogu-group") as gen_boogu_group:
                         _runtime().gr.Markdown("**Boogu-Image Settings**")
@@ -350,6 +365,7 @@ def _build_generate_tab() -> GenerateTab:
             gen_zimage_full_group,
             gen_zimage_pid_group,
             gen_hidream_group,
+            gen_hidream_version,
             gen_ideogram_group,
             gen_boogu_group,
             gen_krea2_group,

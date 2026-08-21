@@ -89,6 +89,30 @@ class HiDreamEditParameters:
 
 
 @dataclass(frozen=True)
+class SenseNovaGenerateParameters:
+    prompt: str = ""
+    width: int = _dimension()
+    height: int = _dimension()
+    quality: str = field(
+        default="Fast (8-step LoRA)",
+        metadata={"choices": ("Fast (8-step LoRA)", "Quality (50-step)")},
+    )
+    seed: int = _seed()
+
+
+@dataclass(frozen=True)
+class SenseNovaEditParameters:
+    img1: Any = None
+    img2: Any = None
+    img3: Any = None
+    prompt: str = ""
+    width: int = _dimension()
+    height: int = _dimension()
+    keep_original_aspect: bool = True
+    seed: int = _seed()
+
+
+@dataclass(frozen=True)
 class BooguGenerateParameters:
     prompt: str = ""
     neg_prompt: str = ""
@@ -164,6 +188,8 @@ class ImageModelFunctions:
     zimage_full_generate: Callable[..., Any]
     hidream_generate: Callable[..., Any]
     hidream_edit: Callable[..., Any]
+    sensenova_generate: Callable[..., Any]
+    sensenova_edit: Callable[..., Any]
     boogu_generate: Callable[..., Any]
     boogu_edit: Callable[..., Any]
     krea2_generate: Callable[..., Any]
@@ -202,6 +228,44 @@ def build_image_model_registry(functions: ImageModelFunctions) -> ModelRegistry:
                         progress=progress,
                     ),
                 )
+            },
+        )
+    )
+
+    registry.register(
+        DataclassModelAdapter(
+            ModelSpec(
+                id="sensenova-u1.5",
+                display_name="SenseNova U1.5",
+                backend_id="local-gpu",
+                operations=(Operation.IMAGE_GENERATE, Operation.IMAGE_EDIT),
+                description=(
+                    "Official in-process SenseNova U1.5 inference: 50-step generation/edit "
+                    "and the official 8-step generation LoRA."
+                ),
+                order=35,
+            ),
+            {
+                Operation.IMAGE_GENERATE: OperationBinding(
+                    SenseNovaGenerateParameters,
+                    lambda p, progress: functions.sensenova_generate(
+                        p.prompt, p.width, p.height, p.quality, p.seed, progress=progress
+                    ),
+                ),
+                Operation.IMAGE_EDIT: OperationBinding(
+                    SenseNovaEditParameters,
+                    lambda p, progress: functions.sensenova_edit(
+                        p.img1,
+                        p.img2,
+                        p.img3,
+                        p.prompt,
+                        p.width,
+                        p.height,
+                        p.keep_original_aspect,
+                        p.seed,
+                        progress=progress,
+                    ),
+                ),
             },
         )
     )
@@ -450,6 +514,8 @@ __all__ = (
     "Krea2GenerateParameters",
     "QwenEditParameters",
     "QwenGenerateParameters",
+    "SenseNovaEditParameters",
+    "SenseNovaGenerateParameters",
     "ZImageGenerateParameters",
     "build_image_model_registry",
 )

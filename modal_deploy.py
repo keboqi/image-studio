@@ -89,6 +89,7 @@ BOOGU_IMAGE_MODEL_REPOS = {
     "Boogu-Image-0.1-Edit-Turbo": "Boogu/Boogu-Image-0.1-Edit-Turbo",
 }
 SEEDVR2_REPO_URL = "https://github.com/keboqi/ComfyUI-SeedVR2_VideoUpscaler.git"
+SENSENOVA_UPSTREAM_REVISION = "f71dfb098226d01edc0e4c67b3917a2af71a30ef"
 
 # Krea-2 Turbo ComfyUI backend constants
 KREA2_COMFY_SCRIPT = "/root/deploy_krea2_comfy.sh"
@@ -96,8 +97,19 @@ KREA2_COMFY_PORT = os.environ.get("KREA2_COMFY_PORT", "8188")
 KREA2_COMFY_READY_TIMEOUT = os.environ.get("KREA2_COMFY_READY_TIMEOUT", "300")
 KREA2_COMFY_START_TIMEOUT = os.environ.get("KREA2_COMFY_START_TIMEOUT", "420")
 KREA2_COMFY_REQUEST_TIMEOUT = os.environ.get("KREA2_COMFY_REQUEST_TIMEOUT", "900")
-KREA2_COMFY_DIR = "/root/krea2-comfy"
-KREA2_COMFY_VENV = os.path.join(KREA2_COMFY_DIR, ".venv")
+KREA2_COMFY_REVISION = os.environ.get(
+    "KREA2_COMFY_REVISION",
+    "a1c421994cdcc5044dbce2bb7628e89386311cc5",
+)
+KREA2_COMFY_DIR = "/opt/krea2-comfy"
+KREA2_COMFY_VENV = "/opt/krea2-comfy-venv"
+KREA2_COMFY_PERSISTENT_DIR = "/persistent_cache/krea2_comfy"
+KREA2_COMFY_MODELS_DIR = os.path.join(KREA2_COMFY_DIR, "ComfyUI", "models")
+KREA2_COMFY_PERSISTENT_MODELS_DIR = os.path.join(
+    KREA2_COMFY_PERSISTENT_DIR,
+    "ComfyUI",
+    "models",
+)
 
 MODAL_DIFFUSIONGEMMA_VLLM_SCRIPT_SOURCE = r'''
 #!/usr/bin/env bash
@@ -658,6 +670,12 @@ image = (
     .pip_install("diffusers==0.36.0")
     .run_commands("pip install flash-attn --no-build-isolation --no-cache-dir")
     .run_commands("pip install sageattention --no-build-isolation")
+    # Official SenseNova U1.5 inference package. Runtime model/LoRA weights are
+    # downloaded into the mounted Hugging Face cache on first use.
+    .run_commands(
+        "pip install "
+        f"https://github.com/OpenSenseNova/SenseNova-U1/archive/{SENSENOVA_UPSTREAM_REVISION}.tar.gz"
+    )
 
     # Boogu-Image generation/edit setup. Checkpoint weights are downloaded into
     # the persistent /root/models link by prepare_models/first use.
@@ -715,13 +733,24 @@ image = (
     )
     .run_commands(_write_modal_vllm_script_command())
     .run_commands("cd /root/ltx-web && git fetch --all && git pull")
-    # Krea-2 Turbo ComfyUI setup: copy the deploy script into the image.
-    # The actual venv install happens at runtime on first use via
-    # Krea2ComfyService.ensure_running() because it requires GPU (the
-    # doctor check imports torch.cuda).  The persistent cache
-    # volume preserves the installed venv across container restarts.
+    # Krea-2 Turbo ComfyUI setup. Keep the repository and its many-file venv in
+    # the image filesystem; Modal Volumes are reserved for large model weights
+    # and caches. Importing torch from a Volume-backed venv can otherwise stall
+    # startup before ComfyUI binds its port.
     .add_local_file("deploy_krea2_comfy.sh", remote_path=KREA2_COMFY_SCRIPT, copy=True)
     .run_commands(f"chmod +x {KREA2_COMFY_SCRIPT}")
+    .run_commands(
+        f"KREA2_COMFY_DIR={KREA2_COMFY_DIR} "
+        f"KREA2_COMFY_VENV={KREA2_COMFY_VENV} "
+        f"KREA2_COMFY_REVISION={KREA2_COMFY_REVISION} "
+        "KREA2_MODEL_MODE=on-demand "
+        f"bash {KREA2_COMFY_SCRIPT} setup"
+    )
+    .run_commands(
+        f"test -x {KREA2_COMFY_VENV}/bin/python && "
+        f"{KREA2_COMFY_VENV}/bin/python -c "
+        '"import huggingface_hub, requests, torch, websocket"'
+    )
     # Application sources go last without copy so they are mounted at startup for
     # fast iteration.  The package is the deployment unit; the legacy
     # image_studio_webui.py compatibility launcher is intentionally not needed.
@@ -780,8 +809,9 @@ PERSISTENT_DIR_LINKS = {
     BOOGU_IMAGE_MODELS_DIR: "/persistent_cache/boogu_models",
     "/root/ltx-web/models": "/persistent_cache/ltx_models",
     "/root/seedvr2_upscaler/models": "/persistent_cache/seedvr2_models",
-    # Krea2 ComfyUI keeps its venv, cache, and HF downloads in persistent storage
-    KREA2_COMFY_DIR: "/persistent_cache/krea2_comfy",
+    # Keep only the large model files on the Volume. The repository and venv
+    # are baked into the image to avoid small-file import latency.
+    KREA2_COMFY_MODELS_DIR: KREA2_COMFY_PERSISTENT_MODELS_DIR,
     "/root/outputs": "/persistent_app/outputs",
     "/root/.pi": PI_PERSISTENT_DIR,
 }
@@ -1245,6 +1275,9 @@ def _modal_runtime_env_defaults() -> dict[str, str]:
         "KREA2_COMFY_PORT": KREA2_COMFY_PORT,
         "KREA2_COMFY_DIR": KREA2_COMFY_DIR,
         "KREA2_COMFY_VENV": KREA2_COMFY_VENV,
+        "KREA2_COMFY_CACHE_DIR": os.path.join(KREA2_COMFY_PERSISTENT_DIR, "cache"),
+        "KREA2_COMFY_REVISION": KREA2_COMFY_REVISION,
+        "KREA2_UPDATE_COMFY": "0",
         "KREA2_COMFY_READY_TIMEOUT": KREA2_COMFY_READY_TIMEOUT,
         "KREA2_COMFY_START_TIMEOUT": KREA2_COMFY_START_TIMEOUT,
         "KREA2_COMFY_REQUEST_TIMEOUT": KREA2_COMFY_REQUEST_TIMEOUT,

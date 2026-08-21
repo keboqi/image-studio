@@ -23,6 +23,8 @@ def test_builtin_image_models_share_one_typed_registry():
             zimage_full_generate=record("zimage_full_generate"),
             hidream_generate=record("hidream_generate"),
             hidream_edit=record("hidream_edit"),
+            sensenova_generate=record("sensenova_generate"),
+            sensenova_edit=record("sensenova_edit"),
             boogu_generate=record("boogu_generate"),
             boogu_edit=record("boogu_edit"),
             krea2_generate=record("krea2_generate"),
@@ -34,10 +36,13 @@ def test_builtin_image_models_share_one_typed_registry():
     assert [
         adapter.spec.display_name
         for adapter in registry.for_operation(Operation.IMAGE_GENERATE)
-    ] == ["Qwen Image", "Z-Image", "HiDream-O1", "Ideogram 4", "Boogu-Image", "Krea2"]
+    ] == [
+        "Qwen Image", "Z-Image", "HiDream-O1", "SenseNova U1.5",
+        "Ideogram 4", "Boogu-Image", "Krea2",
+    ]
     assert [
         adapter.spec.display_name for adapter in registry.for_operation(Operation.IMAGE_EDIT)
-    ] == ["Qwen Image Edit", "HiDream-O1", "Boogu-Image"]
+    ] == ["Qwen Image Edit", "HiDream-O1", "SenseNova U1.5", "Boogu-Image"]
     assert registry.resolve("Krea2 Turbo").spec.backend_id == "krea2-comfy"
 
     result = registry.resolve("qwen-image").execute(
@@ -49,3 +54,18 @@ def test_builtin_image_models_share_one_typed_registry():
     assert calls[0][0] == "qwen_generate"
     assert calls[0][1][:4] == ("cat", "", 768, 512)
     assert calls[0][2]["progress"] == "p"
+
+    result = registry.resolve("sensenova-u1.5").execute(
+        Operation.IMAGE_GENERATE,
+        {
+            "prompt": "poster",
+            "width": 2048,
+            "height": 2048,
+            "quality": "Quality (50-step)",
+            "seed": 7,
+        },
+        progress="sn",
+    )
+    assert result == "sensenova_generate"
+    assert calls[-1][1] == ("poster", 2048, 2048, "Quality (50-step)", 7)
+    assert calls[-1][2]["progress"] == "sn"

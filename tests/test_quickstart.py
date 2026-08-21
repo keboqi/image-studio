@@ -11,6 +11,7 @@ def test_quickstart_retains_full_service_setup():
         "wiltodelta/remove-ai-watermarks",
         "uv_install sageattention --no-build-isolation",
         "nunchaku import ok",
+        "github.com/OpenSenseNova/SenseNova-U1/archive/",
         "packaging ninja psutil",
         "Boogu/Boogu-Image-0.1-Turbo",
         "bash deploy_krea2_comfy.sh install",

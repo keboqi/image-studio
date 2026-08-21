@@ -40,6 +40,15 @@ def validate_boogu_dims(width: int | None, height: int | None) -> tuple[int, int
     return width, height
 
 
+def validate_sensenova_dims(width: int | None, height: int | None) -> tuple[int, int]:
+    width, height = validate_dims(width, height)
+    if width % 32 or height % 32:
+        raise UserInputError("SenseNova U1.5 width/height must be multiples of 32.")
+    if not (256 <= width <= 4096 and 256 <= height <= 4096):
+        raise UserInputError("SenseNova U1.5 width/height must be between 256 and 4096.")
+    return width, height
+
+
 def snap_ltx_audio_video_frames(frames: int, *, max_frames: int = 1201) -> int:
     maximum = ((max_frames - 9) // 16) * 16 + 9
     snapped = math.floor(((int(frames) - 9) / 16) + 0.5) * 16 + 9

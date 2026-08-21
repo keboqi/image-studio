@@ -16,6 +16,7 @@ GENERATION_MODEL_IDS = {
     "Qwen Image": "qwen-image",
     "Z-Image": "z-image",
     "HiDream-O1": "hidream-o1",
+    "SenseNova U1.5": "sensenova-u1.5",
     "Ideogram 4": "ideogram-4",
     "Boogu-Image": "boogu-image",
     "Krea2": "krea2",
@@ -24,6 +25,7 @@ GENERATION_MODEL_IDS = {
 EDIT_MODEL_IDS = {
     "Qwen Image Edit": "qwen-image-edit",
     "HiDream-O1": "hidream-o1",
+    "SenseNova U1.5": "sensenova-u1.5",
     "Boogu-Image": "boogu-image",
 }
 
@@ -112,6 +114,13 @@ def generation_parameters(request: GenerationRequest) -> dict[str, Any]:
             "version": request.hidream_version,
             "seed": request.seed,
         },
+        "sensenova-u1.5": {
+            "prompt": request.prompt,
+            "width": request.width,
+            "height": request.height,
+            "quality": request.hidream_version,
+            "seed": request.seed,
+        },
         "boogu-image": {
             "prompt": request.prompt,
             "neg_prompt": request.neg_prompt,
@@ -168,6 +177,13 @@ def edit_parameters(request: EditRequest) -> dict[str, Any]:
             "height": request.height,
             "keep_original_aspect": request.keep_original_aspect,
             "version": request.hidream_version,
+            "seed": request.hidream_seed,
+        },
+        "sensenova-u1.5": {
+            **common,
+            "width": request.width,
+            "height": request.height,
+            "keep_original_aspect": request.keep_original_aspect,
             "seed": request.hidream_seed,
         },
         "boogu-image": {
@@ -270,7 +286,7 @@ def _dispatch_generate(
     hidream_version,
     progress=NO_PROGRESS,
 ):
-    """Preserve the established 35-input Gradio endpoint."""
+    """Dispatch the stable flat Gradio generation endpoint."""
     request = GenerationRequest.from_mapping(locals())
     return _run_generation_request(request, progress)
 
@@ -296,7 +312,7 @@ def _dispatch_edit(
     hidream_version,
     progress=NO_PROGRESS,
 ):
-    """Preserve the established 18-input Gradio endpoint."""
+    """Dispatch the stable flat Gradio edit endpoint."""
     request = EditRequest.from_mapping(locals())
     return _run_edit_request(request, progress)
 

@@ -21,7 +21,7 @@ from gradio_client import Client
 
 client = Client("http://127.0.0.1:7860/")
 preview_webp_path, status_text, raw_png_path, vram_markdown = client.predict(
-    mode="Qwen Image",               # str: "Qwen Image", "Z-Image", "HiDream-O1", "Ideogram 4", "Boogu-Image", "Krea2"
+    mode="Qwen Image",               # str: includes "SenseNova U1.5" for native generation/edit-capable inference
     prompt="A cute cat",            # str
     neg_prompt="blurry",            # str (used by Qwen Image, Z-Image Best Quality, and Boogu-Image Base)
     width=1024,                     # int
@@ -55,7 +55,7 @@ preview_webp_path, status_text, raw_png_path, vram_markdown = client.predict(
     ideogram_api_key="",                      # str (remote Ideogram API upsampler)
     seed=-1,                        # float (-1 for random)
     zimage_version="Turbo",         # str (Z-Image only): "Turbo" or "Best Quality"
-    hidream_version="Dev",          # str (HiDream-O1 only): "Dev" or "Best Quality"
+    hidream_version="Dev",          # str: HiDream "Dev"/"Best Quality"; SenseNova "Fast (8-step LoRA)"/"Quality (50-step)"
     api_name="/generate"
 )
 ```
@@ -69,7 +69,7 @@ from gradio_client import Client, handle_file
 
 client = Client("http://127.0.0.1:7860/")
 preview_webp_path, status_text, raw_png_path, vram_markdown = client.predict(
-    model_name="Qwen Image Edit",             # str: "Qwen Image Edit", "HiDream-O1", or "Boogu-Image"
+    model_name="Qwen Image Edit",             # str: "Qwen Image Edit", "HiDream-O1", "SenseNova U1.5", or "Boogu-Image"
     img1=handle_file("path/to/img1.png"),  # File path or URL
     img2=None,                             # Optional file 2
     img3=None,                             # Optional file 3
@@ -82,10 +82,10 @@ preview_webp_path, status_text, raw_png_path, vram_markdown = client.predict(
     boogu_text_guidance=4.0,               # float (Boogu-Image Base only)
     boogu_image_guidance=1.0,              # float (Boogu-Image Base only)
     boogu_seed=-1,                         # float (Boogu-Image only)
-    width=1024,                            # int (HiDream or Boogu-Image)
-    height=1024,                           # int (HiDream or Boogu-Image)
-    keep_original_aspect=True,             # bool (HiDream/Boogu-Image single source)
-    hidream_seed=-1,                       # float
+    width=1024,                            # int (HiDream, SenseNova, or Boogu-Image)
+    height=1024,                           # int (HiDream, SenseNova, or Boogu-Image)
+    keep_original_aspect=True,             # bool (HiDream/SenseNova/Boogu-Image single source)
+    hidream_seed=-1,                       # float (HiDream or SenseNova)
     hidream_version="Dev",                 # str (HiDream-O1 only): "Dev" or "Best Quality"
     api_name="/edit"
 )

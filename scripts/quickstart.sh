@@ -10,6 +10,7 @@ PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 UV_BIN="${UV_BIN:-uv}"
 IMAGE_STUDIO_QUICKSTART_MODE="${IMAGE_STUDIO_QUICKSTART_MODE:-env-only}"
 SEEDVR2_REPO="${IMAGE_STUDIO_SEEDVR2_REPO:-https://github.com/keboqi/ComfyUI-SeedVR2_VideoUpscaler.git}"
+SENSENOVA_UPSTREAM_REVISION="f71dfb098226d01edc0e4c67b3917a2af71a30ef"
 LAUNCH_ARGS=()
 
 log() {
@@ -272,6 +273,7 @@ uv_install Librosa gradio "diffusers==0.36.0"
 # own flash-attn setup via boogu_image/utils/get_flash_attn.py.
 uv_install sageattention --no-build-isolation
 uv_install "https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu12.8torch2.8-cp312-cp312-linux_x86_64.whl"
+uv_install "https://github.com/OpenSenseNova/SenseNova-U1/archive/${SENSENOVA_UPSTREAM_REVISION}.tar.gz"
 python -c "import nunchaku; print('nunchaku import ok:', getattr(nunchaku, '__version__', 'unknown'))"
 
 # Ideogram 4 NVFP4 generation setup.

@@ -33,6 +33,7 @@ def _build_header(context: AppContext):
                 "# Image Studio WebUI\n"
                 "**Text-to-Image** generation, **Multi-Image Editing**, **SeedVR2 Upscaling**, "
                 "**HiDream-O1 Full/Dev** generation/editing, "
+                "**SenseNova U1.5** 50-step generation/editing and 8-step generation, "
                 "**Boogu-Image** generation/editing, "
                 "**Ideogram 4** generation, "
                 "**Krea2 Turbo (ComfyUI)** generation, "
@@ -60,6 +61,7 @@ def _build_footer() -> None:
         "[**SeedVR2**](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) Upscaler | "
         "[**HiDream-O1-Image**](https://huggingface.co/HiDream-ai/HiDream-O1-Image) | "
         "[**HiDream-O1-Image-Dev**](https://huggingface.co/HiDream-ai/HiDream-O1-Image-Dev) | "
+        "[**SenseNova U1.5**](https://github.com/OpenSenseNova/SenseNova-U1) | "
         f"[**Gemma 4 12B-it**]({GEMMA_MODEL_URL}) Chat & Prompt | Gradio",
         elem_id="footer",
     )

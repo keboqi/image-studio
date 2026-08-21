@@ -21,9 +21,10 @@ def _edit_mode_visibility_updates(model_name: str, boogu_version: str):
     boogu_version = _runtime()._normalize_boogu_edit_version(boogu_version)
     hidream = model_name == _runtime().HIDREAM_O1_MODE
     boogu = model_name == _runtime().BOOGU_IMAGE_MODE
+    sensenova = model_name == _runtime().SENSENOVA_MODE
     boogu_base = boogu and boogu_version == _runtime().BOOGU_IMAGE_VERSION_BASE
-    qwen = not hidream and not boogu
-    sized = hidream or boogu
+    qwen = not hidream and not boogu and not sensenova
+    sized = hidream or boogu or sensenova
     if boogu_base:
         boogu_steps_update = _runtime().gr.update(
             visible=True,
@@ -47,7 +48,7 @@ def _edit_mode_visibility_updates(model_name: str, boogu_version: str):
         "hidream": _runtime().gr.update(visible=hidream),
         "size": _runtime().gr.update(visible=sized),
         "aspect": _runtime().gr.update(visible=sized),
-        "hidream_version": _runtime().gr.update(visible=hidream),
+        "hidream_version": _runtime().gr.update(visible=hidream or sensenova),
         "boogu_guidance": _runtime().gr.update(visible=boogu_base),
         "boogu_steps": boogu_steps_update,
     }

@@ -18,8 +18,9 @@ def test_runtime_access_is_confined_to_legacy_adapters():
             "generators/hidream.py",
             "generators/ideogram.py",
             "generators/krea2.py",
-            "generators/qwen.py",
-            "generators/zimage.py",
+                "generators/qwen.py",
+                "generators/sensenova.py",
+                "generators/zimage.py",
             "ui/gallery_actions.py",
             "ui/models.py",
         }

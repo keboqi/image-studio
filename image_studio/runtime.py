@@ -53,6 +53,9 @@ from image_studio.validation import (
 from image_studio.validation import (
     validate_ideogram_dims,
 )
+from image_studio.validation import (
+    validate_sensenova_dims as pure_validate_sensenova_dims,
+)
 from image_studio.web.routes import (
     WebRouteDependencies,
     configure_app_routes,
@@ -170,6 +173,15 @@ BOOGU_IMAGE_EDIT_TURBO_NAME = "Boogu-Image-0.1-Edit-Turbo"
 KREA2_MODE = "Krea2"
 KREA2_DEFAULT_STEPS = 8
 KREA2_DEFAULT_CFG = 1.0
+SENSENOVA_MODE = "SenseNova U1.5"
+SENSENOVA_MODEL_ID = os.environ.get(
+    "SENSENOVA_MODEL_ID", "sensenova/SenseNova-U1.5-8B-MoT"
+)
+SENSENOVA_LORA_REPO = "sensenova/SenseNova-U1.5-8B-MoT-LoRAs"
+SENSENOVA_LORA_FILENAME = "SenseNova-U1.5-8B-MoT-LoRA-8step.safetensors"
+SENSENOVA_QUALITY_FAST = "Fast (8-step LoRA)"
+SENSENOVA_QUALITY_BASE = "Quality (50-step)"
+SENSENOVA_QUALITY_CHOICES = [SENSENOVA_QUALITY_FAST, SENSENOVA_QUALITY_BASE]
 BOOGU_IMAGE_MAX_SEQUENCE_LENGTH = APP_CONFIG.boogu.max_sequence_length
 REMOVE_AI_WATERMARKS_REPO = "https://github.com/wiltodelta/remove-ai-watermarks.git"
 REMOVE_AI_WATERMARKS_DIR = str(APP_CONFIG.paths.remove_ai_watermarks_dir)
@@ -195,6 +207,8 @@ MODEL_BOOGU_IMAGE_BASE = "boogu_image_base"
 MODEL_BOOGU_IMAGE_EDIT = "boogu_image_edit"
 MODEL_BOOGU_IMAGE_EDIT_TURBO = "boogu_image_edit_turbo"
 MODEL_KREA2_TURBO_NVFP4 = "krea2_turbo_nvfp4"
+MODEL_SENSENOVA_BASE = "sensenova_u1_5_base"
+MODEL_SENSENOVA_FAST = "sensenova_u1_5_fast"
 MODEL_IDEOGRAM4_NVFP4 = "ideogram4_nvfp4"
 MODEL_IDEOGRAM4_FP8_NVFP4_UNCOND = "ideogram4_fp8_nvfp4_uncond"
 MODEL_IDEOGRAM4_FP8 = "ideogram4_fp8"
@@ -635,6 +649,7 @@ CHAT_MAX_TOKEN_LIMIT = 32768
 IDEOGRAM4_EXCLUSIVE_GROUP = "ideogram4"
 BOOGU_IMAGE_EXCLUSIVE_GROUP = "boogu_image"
 KREA2_EXCLUSIVE_GROUP = "krea2"
+SENSENOVA_EXCLUSIVE_GROUP = "sensenova_u1_5"
 
 
 # Estimated VRAM values are rough upper-bounds so the manager errs on the side
@@ -670,6 +685,12 @@ MODEL_SPECS: dict[str, ManagedModelSpec] = {
     ),
     MODEL_KREA2_TURBO_NVFP4: ManagedModelSpec(
         MODEL_KREA2_TURBO_NVFP4, "Krea2 Turbo (ComfyUI)", 38_000, KREA2_EXCLUSIVE_GROUP
+    ),
+    MODEL_SENSENOVA_BASE: ManagedModelSpec(
+        MODEL_SENSENOVA_BASE, "SenseNova U1.5 (50-step base)", 50_000, SENSENOVA_EXCLUSIVE_GROUP
+    ),
+    MODEL_SENSENOVA_FAST: ManagedModelSpec(
+        MODEL_SENSENOVA_FAST, "SenseNova U1.5 (8-step LoRA)", 50_000, SENSENOVA_EXCLUSIVE_GROUP
     ),
     MODEL_IDEOGRAM4_NVFP4: ManagedModelSpec(
         MODEL_IDEOGRAM4_NVFP4, "Ideogram 4 NVFP4", 22_000, IDEOGRAM4_EXCLUSIVE_GROUP
@@ -806,6 +827,18 @@ def _build_model_storage_catalog() -> ModelStorageCatalog:
             display_name=MODEL_SPECS[MODEL_HIDREAM_O1_DEV].display_name,
             hf_repos=(HIDREAM_O1_SPECS[MODEL_HIDREAM_O1_DEV].model_id,),
             active_model_keys=(MODEL_HIDREAM_O1_DEV,),
+        ),
+        ModelStorageTarget(
+            key=MODEL_SENSENOVA_BASE,
+            display_name=MODEL_SPECS[MODEL_SENSENOVA_BASE].display_name,
+            hf_repos=(SENSENOVA_MODEL_ID,),
+            active_model_keys=(MODEL_SENSENOVA_BASE, MODEL_SENSENOVA_FAST),
+        ),
+        ModelStorageTarget(
+            key="sensenova_u1_5_lora",
+            display_name="SenseNova U1.5 8-step LoRA",
+            hf_repos=(SENSENOVA_LORA_REPO,),
+            active_model_keys=(MODEL_SENSENOVA_FAST,),
         ),
         ModelStorageTarget(
             key=MODEL_KREA2_TURBO_NVFP4,
@@ -949,6 +982,9 @@ def _load_managed_model(
 _runtime_pipelines_qwen = importlib.import_module('image_studio.pipelines.qwen')
 export_public(_runtime_pipelines_qwen, globals())
 
+_runtime_pipelines_sensenova = importlib.import_module('image_studio.pipelines.sensenova')
+export_public(_runtime_pipelines_sensenova, globals())
+
 
 
 
@@ -962,6 +998,10 @@ export_public(_runtime_pipelines_qwen, globals())
 
 def validate_boogu_dims(w: int | None, h: int | None) -> tuple[int, int]:
     return pure_validate_boogu_dims(w, h)
+
+
+def validate_sensenova_dims(w: int | None, h: int | None) -> tuple[int, int]:
+    return pure_validate_sensenova_dims(w, h)
 
 
 
@@ -1220,6 +1260,9 @@ export_public(_runtime_generators_krea2, globals())
 
 _runtime_generators_hidream = importlib.import_module('image_studio.generators.hidream')
 export_public(_runtime_generators_hidream, globals())
+
+_runtime_generators_sensenova = importlib.import_module('image_studio.generators.sensenova')
+export_public(_runtime_generators_sensenova, globals())
 
 
 
@@ -1779,6 +1822,11 @@ HIDREAM_MODE_KEYS = {
     "Best Quality": MODEL_HIDREAM_O1_FULL,
     "Dev": MODEL_HIDREAM_O1_DEV,
 }
+SENSENOVA_MODEL_KEYS = {MODEL_SENSENOVA_BASE, MODEL_SENSENOVA_FAST}
+SENSENOVA_QUALITY_KEYS = {
+    SENSENOVA_QUALITY_FAST: MODEL_SENSENOVA_FAST,
+    SENSENOVA_QUALITY_BASE: MODEL_SENSENOVA_BASE,
+}
 
 
 
@@ -1829,6 +1877,8 @@ IMAGE_MODEL_REGISTRY = build_image_model_registry(
         zimage_full_generate=run_zimage_full,
         hidream_generate=run_hidream_generate,
         hidream_edit=run_hidream_edit,
+        sensenova_generate=run_sensenova_generate,
+        sensenova_edit=run_sensenova_edit,
         boogu_generate=run_boogu_generate,
         boogu_edit=run_boogu_edit,
         krea2_generate=run_krea2_generate,

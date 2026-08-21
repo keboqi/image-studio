@@ -33,7 +33,7 @@ TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/nightly/cu1
 # Keep models in the same long-lived ComfyUI process.
 # If 2048x2048 OOMs, restart with:
 #   COMFY_ARGS="" bash deploy_krea2_comfy.sh restart
-COMFY_ARGS="${COMFY_ARGS:---gpu-only --use-pytorch-cross-attention}"
+COMFY_ARGS="${COMFY_ARGS:---gpu-only --use-pytorch-cross-attention --debug-hang}"
 
 READY_TIMEOUT="${READY_TIMEOUT:-${KREA2_COMFY_READY_TIMEOUT:-300}}"
 REQUEST_TIMEOUT="${REQUEST_TIMEOUT:-${KREA2_COMFY_REQUEST_TIMEOUT:-900}}"
@@ -60,6 +60,8 @@ VAE_FILE="vae/qwen_image_vae.safetensors"
 
 ACTION="${1:-start}"
 KREA2_MODEL_MODE="${KREA2_MODEL_MODE:-${KREA2_DOWNLOAD_MODE:-on-demand}}"
+KREA2_COMFY_REVISION="${KREA2_COMFY_REVISION:-}"
+KREA2_UPDATE_COMFY="${KREA2_UPDATE_COMFY:-1}"
 
 if [[ "${OS:-}" == "Windows_NT" ]]; then
   VENV_PYTHON="${VENV_DIR}/Scripts/python.exe"
@@ -84,7 +86,8 @@ mkdirs() {
 export_runtime_env() {
   export HF_HOME XDG_CACHE_HOME
   export TRITON_CACHE_DIR TORCHINDUCTOR_CACHE_DIR TORCH_EXTENSIONS_DIR CUDA_CACHE_PATH
-  export HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-1}"
+  export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
+  export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
   export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
   [[ -n "${HF_TOKEN:-}" ]] && export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}" || true
 }
@@ -117,6 +120,9 @@ create_or_recreate_venv() {
 
   if [[ ! -x "${VENV_PYTHON}" ]]; then
     echo "Creating venv: ${VENV_DIR}"
+    # An install stamp belongs to one concrete venv. If the image/runtime no
+    # longer contains that venv, never let the old stamp skip installation.
+    rm -f "${INSTALL_STAMP}"
     if command -v uv >/dev/null 2>&1; then
       uv venv "${VENV_DIR}" --python "${PYTHON_CMD}"
     else
@@ -159,9 +165,46 @@ clone_or_update_comfy() {
 
   if [[ ! -d "${COMFY_DIR}/.git" ]]; then
     git clone https://github.com/comfyanonymous/ComfyUI.git "${COMFY_DIR}"
-  else
+  elif [[ -z "${KREA2_COMFY_REVISION}" ]] \
+    && [[ "${KREA2_UPDATE_COMFY}" == "1" || "${KREA2_UPDATE_COMFY}" == "true" ]]; then
     git -C "${COMFY_DIR}" pull --ff-only || true
+  else
+    echo "Skipping automatic ComfyUI update."
   fi
+
+  if [[ -n "${KREA2_COMFY_REVISION}" ]]; then
+    if ! git -C "${COMFY_DIR}" rev-parse --verify --quiet "${KREA2_COMFY_REVISION}^{commit}" >/dev/null; then
+      git -C "${COMFY_DIR}" fetch origin "${KREA2_COMFY_REVISION}"
+    fi
+    local current_revision target_revision
+    current_revision="$(git -C "${COMFY_DIR}" rev-parse HEAD)"
+    target_revision="$(git -C "${COMFY_DIR}" rev-parse "${KREA2_COMFY_REVISION}^{commit}")"
+    if [[ "${current_revision}" != "${target_revision}" ]]; then
+      git -C "${COMFY_DIR}" checkout --detach "${target_revision}"
+    fi
+    echo "Using pinned ComfyUI revision: ${target_revision}"
+  fi
+}
+
+requirements_fingerprint() {
+  sha256sum "${COMFY_DIR}/requirements.txt" | awk '{print $1}'
+}
+
+venv_has_runtime_packages() {
+  [[ -x "${VENV_PYTHON}" ]] || return 1
+  "${VENV_PYTHON}" - <<'PY'
+import importlib.util
+
+required = ("huggingface_hub", "requests", "torch", "websocket")
+missing = [name for name in required if importlib.util.find_spec(name) is None]
+raise SystemExit(1 if missing else 0)
+PY
+}
+
+install_is_current() {
+  [[ -f "${INSTALL_STAMP}" ]] || return 1
+  venv_has_runtime_packages || return 1
+  grep -Fxq "requirements_sha256=$(requirements_fingerprint)" "${INSTALL_STAMP}"
 }
 
 install_backend_if_needed() {
@@ -170,10 +213,14 @@ install_backend_if_needed() {
   export_runtime_env
   clone_or_update_comfy
 
-  if [[ -f "${INSTALL_STAMP}" && "${KREA2_FORCE_INSTALL:-0}" != "1" ]]; then
-    echo "Install stamp found: ${INSTALL_STAMP}"
+  if install_is_current && [[ "${KREA2_FORCE_INSTALL:-0}" != "1" ]]; then
+    echo "ComfyUI requirements are already installed (${INSTALL_STAMP})."
     maybe_prefetch_models
     return 0
+  fi
+
+  if [[ -f "${INSTALL_STAMP}" ]]; then
+    echo "ComfyUI requirements changed (or the legacy install stamp has no fingerprint); reconciling the venv."
   fi
 
   echo
@@ -191,7 +238,10 @@ install_backend_if_needed() {
   maybe_prefetch_models
   doctor
 
-  date -u +"%Y-%m-%dT%H:%M:%SZ" > "${INSTALL_STAMP}"
+  {
+    echo "requirements_sha256=$(requirements_fingerprint)"
+    echo "installed_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  } > "${INSTALL_STAMP}"
 }
 
 should_prefetch_models() {
@@ -247,7 +297,6 @@ for filename in files:
         repo_id=repo_id,
         filename=filename,
         local_dir=local_dir,
-        resume_download=True,
     )
     print(" ->", path)
 PY
@@ -320,7 +369,15 @@ wait_ready() {
   done
 
   echo "Timed out waiting for ${SERVER_BASE}. Recent logs:" >&2
+  if pid_running; then
+    local pid
+    pid="$(cat "${PID_FILE}")"
+    echo "Requesting a diagnostic traceback from unready ComfyUI PID ${pid}." >&2
+    kill -INT "${pid}" >/dev/null 2>&1 || true
+    sleep 2
+  fi
   tail -n "${LOG_LINES}" "${LOG_FILE}" >&2 || true
+  stop_service
   return 1
 }
 
